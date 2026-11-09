@@ -15,6 +15,8 @@ export const ITEMS = {
   coin: { name: 'Coin', color: 0xe8c547 },
   stew: { name: 'Hearty stew', color: 0xa0603a, food: 12 },
   horse: { name: 'Horse', color: 0x8a5a32 },
+  berries: { name: 'Wild berries', color: 0x8a2a5a, food: 2 },
+  saddlebags: { name: 'Saddlebags', color: 0x6a4a2a },
   campfire: { name: 'Campfire', color: 0xe2783a },
   forge: { name: 'Forge', color: 0x7a7f8c },
 };
@@ -36,6 +38,8 @@ export const RECIPES = [
     info: 'Charcoal and sulfur, ground together.' },
   { out: 'ammo', n: 6, need: [['i', 'ingot', 1], ['i', 'powder', 2]], station: 'forge',
     info: 'Rifle rounds. Each shot uses one.' },
+  { out: 'saddlebags', n: 1, need: [['i', 'hide', 4], ['m', MAT.WOOD, 6]],
+    info: 'Fit them on your horse for extra carrying space (B near your horse).' },
   { out: 'rifle', n: 1, need: [['i', 'ingot', 5], ['m', MAT.WOOD, 12], ['i', 'hide', 2]], station: 'forge',
     info: 'Long-range weapon. Hold right click to aim.' },
 ];

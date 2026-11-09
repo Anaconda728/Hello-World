@@ -28,6 +28,7 @@ You can also turn on **GitHub Pages** for this repository (Settings â†’ Pages â†
 | G | Mount / dismount a horse |
 | V | Whistle for your horse |
 | M | Open / close the full map |
+| B | Open your horse's saddlebags |
 | R / H | Eat / use a bandage |
 | Q / E | Shrink / grow the brush |
 | C | Switch between survival and creative mode |
@@ -62,7 +63,20 @@ You can also turn on **GitHub Pages** for this repository (Settings â†’ Pages â†
   - greet you as they pass and carry lanterns at night.
 
   Gunfire sends horses into a gallop, and a galloping horse will trample you. Talk to a wagon driver (T) to trade from their travelling stock, or ask riders for news of the road. Aim at a traveller and they stop with their hands up; keep aiming and they throw down their purse. Crimes on the open road go unseen, but near a town they bring the guards.
-- **Horses.** Buy one from a town merchant (60 coins), or take the horse of a bandit you've beaten. Ride with G: trot, gallop with Shift, and jump higher. You can still shoot from the saddle. Your horse stays where you leave it; whistle (V) and it runs to you from up to 220 m away. Galloping doesn't make you hungry, but falls from a horse still hurt.
+- **Graphics.**
+  - Lighting uses filmic (ACES) tone mapping, with soft real-time sun shadows that follow you.
+  - The sky is a gradient dome with a sun glow, and fog fades into the horizon colour.
+  - The ground has fine procedural detail, and water is glossy with ripples that catch the sun.
+- **Vegetation.**
+  - About twice as many trees, in three kinds: broad oaks, white-barked birches, and tiered pines (snow-dusted up high). They have lumpy, softly shaded canopies that sway in the wind.
+  - Wild bushes, plus berry bushes (raspberries and blueberries) you can pick by left-clicking. Picked bushes grow back.
+  - Scattered rocks.
+  - Grass tufts and wildflowers sway around you. Grass takes its colour from the ground, grows thicker in meadows and stays out of buildings.
+- **Carry weight.** Everything you carry has weight: you can carry 50 before you slow down. Coins weigh nothing.
+- **Saddlebags.** Craft them (4 hide, 6 timber) or buy them at a stable, and fit them to your horse. Press B beside your horse, or while riding, to move goods between you and the bags (they hold 100).
+- **Stables.** Every town has an open-fronted stable with a stablehand. Buy a horse (60), rent one for a day (12; it goes home when time's up), or keep yours in the stable (3) and collect it at any stable in the land, saddlebags and all.
+- **Lodging.** The innkeeper rents rooms (8 coins): sleep until dawn, wake fully healed, and that inn becomes where you respawn. Or rent a house for a week (45). It's marked by a green lamp at the door. Press T there to sleep or use a chest that holds 400, which is kept even after the rental runs out.
+- **Horses.** Buy one at a stable, or take the horse of a bandit you've beaten. Ride with G: trot, gallop with Shift, and jump higher. You can still shoot from the saddle. Your horse stays where you leave it; whistle (V) and it runs to you from up to 220 m away. Galloping doesn't make you hungry, but falls from a horse still hurt.
 - **Bandits.** Camps of 3â€“5 armed bandits (some on horseback) sit out in the wilds, away from towns and roads, with tents and a fire you can spot at night. They:
   - aim before they fire, keep their distance, circle you and back away if you get too close;
   - flee when badly hurt;
@@ -126,4 +140,5 @@ You can also turn on **GitHub Pages** for this repository (Settings â†’ Pages â†
 | `js/horses.js` | Rideable horses: owning, mounting, whistling, animation |
 | `js/bandits.js` | Bandit camps, ambushes and combat |
 | `js/minimap.js` | Terrain tile cache and map rendering |
+| `js/vegetation.js` | Tree, bush, berry and rock models; grass and flowers with wind |
 | `js/main.js` | Rendering, sky, input, HUD, saving |

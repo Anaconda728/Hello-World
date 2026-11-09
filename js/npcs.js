@@ -9,7 +9,7 @@ const FIRST_A = ['Al', 'Bel', 'Cor', 'Dan', 'El', 'Fen', 'Gar', 'Hal', 'Is', 'Jo
 const FIRST_B = ['a', 'en', 'ric', 'wyn', 'ia', 'o', 'ard', 'ett', 'ie', 'us', 'ora', 'iel', 'an', 'ith', 'ey', 'ina'];
 const SURNAMES = ['Ashby', 'Brook', 'Carter', 'Dale', 'Fletcher', 'Hollow', 'Marsh', 'Penn', 'Reed', 'Stone', 'Thatcher',
   'Wells', 'Ward', 'Fenn', 'Mills', 'Cooper', 'Hayes', 'Tanner', 'Birch', 'Croft'];
-export const JOB_TITLES = { merchant: 'Merchant', smith: 'Blacksmith', keeper: 'Innkeeper', guard: 'Town guard', laborer: 'Labourer', idler: 'Townsfolk' };
+export const JOB_TITLES = { merchant: 'Merchant', smith: 'Blacksmith', keeper: 'Innkeeper', guard: 'Town guard', laborer: 'Labourer', idler: 'Townsfolk', stablehand: 'Stablehand' };
 
 const pickL = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const LINES = {
@@ -194,13 +194,14 @@ export class NPCs {
     const homes = t.buildings.filter((b) => b.type === 'house');
     const jobs = t.stalls.map((st) => ['merchant', st]);
     jobs.push(['smith'], ['keeper']);
+    if (t.stable) jobs.push(['stablehand']);
     const guards = t.R >= 40 ? 4 : 3;
     for (let i = 0; i < guards; i++) jobs.push(['guard']);
     const pop = Math.min(20, Math.max(jobs.length + 3, homes.length * 2 + 2));
     while (jobs.length < pop) jobs.push([rng() < 0.55 ? 'laborer' : 'idler']);
     let gi = 0;
     jobs.forEach(([job, stall], i) => {
-      const home = job === 'guard' ? t.guardhouse : job === 'keeper' ? t.tavern : job === 'smith' ? t.smithy : homes[i % homes.length];
+      const home = job === 'guard' ? t.guardhouse : job === 'keeper' ? t.tavern : job === 'smith' ? t.smithy : job === 'stablehand' ? t.stable : homes[i % homes.length];
       const n = new NPC(t, job, home, rng);
       n.stall = stall;
       if (job === 'guard') { n.nightShift = gi % 3 === 2; gi++; n.patrolNode = t.patrol[Math.floor(rng() * t.patrol.length)]; }
@@ -271,6 +272,10 @@ export class NPCs {
       case 'keeper': {
         const tv = t.tavern;
         return { key: 'work', node: tv.doorNode, pos: [tv.door[0] + Math.sin(tv.rot) * 1.0, tv.door[1] + Math.cos(tv.rot) * 1.0], face: tv.rot, work: 'idle' };
+      }
+      case 'stablehand': {
+        const st = t.stable;
+        return { key: 'work', node: st.doorNode, pos: [st.door[0] + Math.sin(st.rot) * 1.4 + Math.cos(st.rot) * 1.5, st.door[1] + Math.cos(st.rot) * 1.4 - Math.sin(st.rot) * 1.5], face: st.rot, work: 'idle' };
       }
       case 'laborer': {
         const bb = t.buildings[n.laborSeq[n.laborIdx % n.laborSeq.length]];

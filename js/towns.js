@@ -126,8 +126,9 @@ function layout(t, rng) {
   bld[0].type = 'tavern'; bld[0].hw = 4.8;
   bld[1].type = 'smithy';
   bld[bld.length - 1].type = 'guardhouse'; bld[bld.length - 1].hw = 6.5;
+  bld[2].type = 'stable'; bld[2].hw = 3.0;
   t.buildings = bld;
-  t.tavern = bld[0]; t.smithy = bld[1]; t.guardhouse = bld[bld.length - 1];
+  t.tavern = bld[0]; t.smithy = bld[1]; t.stable = bld[2]; t.guardhouse = bld[bld.length - 1];
 
   // Market stalls on the plaza diagonals, a well on the last one.
   const nSt = 2 + (rng() < 0.5 ? 1 : 0);
@@ -340,6 +341,23 @@ export function buildTownMeshes(t, roads = []) {
     const roofC = pick(ROOF, b.r2);
     let top = hw;
     target = solid;
+    if (b.type === 'stable') {
+      // Open-fronted barn with stalls, hay and a water trough.
+      const WOOD = 0x7a5a3a, rh = Math.min(W, D) * 0.4;
+      part(BOXN, 0, -0.3, 0, W + 0.2, 0.9, D + 0.2, DARKSTONE);
+      part(BOXN, 0, hw / 2, -D / 2 + 0.1, W, hw, 0.2, WOOD);
+      for (const sx of [-1, 1]) part(BOXN, sx * (W / 2 - 0.1), hw / 2, 0, 0.2, hw, D, WOOD);
+      for (let i = -1; i <= 1; i++) part(BOXN, i * (W / 2 - 0.15), hw / 2, D / 2 - 0.1, 0.2, hw, 0.2, TIMBER);
+      part(BOXN, 0, hw - 0.1, D / 2 - 0.1, W, 0.2, 0.2, TIMBER);
+      for (let i = 1; i < 3; i++) part(BOXN, -W / 2 + (W * i) / 3, 0.6, -D * 0.1, 0.1, 1.2, D * 0.7, WOOD);
+      part(PRISM, 0, hw, 0, W + 0.7, rh, D + 0.8, 0x6e4a33);
+      for (let i = 0; i < 3; i++) part(BOXN, -W / 3 + i * (W / 3), 0.35, -D / 2 + 0.8, 1.0, 0.7, 0.7, 0xd8c070);
+      part(BOXN, W / 2 + 0.6, 0.3, D / 2 - 0.5, 0.6, 0.6, 1.8, 0x5a4a3a);
+      part(BOXN, W / 2 + 0.6, 0.55, D / 2 - 0.5, 0.45, 0.08, 1.65, 0x2a5070);
+      for (let i = 0; i < 4; i++) part(BOXN, -W / 2 - 0.3 + i * 0.1, 0.5, D / 2 + 0.6 + i * 0.0, 0.1, 1.0, 0.1, TIMBER);
+      colliders.push({ x0: b.rect[0], x1: b.rect[1], z0: b.rect[2], z1: b.rect[3], bottom: Y - 1, top: Y + hw + rh, building: b });
+      continue;
+    }
     part(BOXN, 0, -0.3, 0, W + 0.2, 0.9, D + 0.2, DARKSTONE);                        // foundation
     part(BOXN, 0, hw / 2, 0, W, hw, D, wall);                                          // walls
     part(BOXN, 0, 1.0, D / 2 + 0.05, 1.1, 2.0, 0.12, DOOR);                            // door

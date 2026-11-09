@@ -25,6 +25,7 @@ export class Player {
     this.maxHealth = 20;
     this.fallImpact = 0;   // strongest landing speed since last read
     this.mounted = null;   // the horse being ridden, if any
+    this.speedMul = 1;     // < 1 when carrying too much
   }
 
   update(dt, keys) {
@@ -49,6 +50,7 @@ export class Player {
     } else {
       let speed = this.mounted ? (shift ? 13 : 6.5) : (shift ? 7.2 : 4.4);
       if (this.inWater) speed *= 0.6;
+      speed *= this.speedMul;
       const accel = this.mounted ? (this.grounded ? 5 : 1.5) : this.grounded ? 14 : this.inWater ? 4 : 2.5;
       const k = Math.min(1, accel * dt);
       v.x += (wish.x * speed - v.x) * k;

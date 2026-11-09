@@ -48,7 +48,7 @@ export function buildChunkGeometry(world, chunk) {
   }
 
   vidx.fill(-1);
-  const pos = [], nor = [], col = [], ind = [];
+  const pos = [], nor = [], col = [], ind = [], vm = [];
   const d = new Float32Array(8);
   let vc = 0;
 
@@ -106,6 +106,7 @@ export function buildChunkGeometry(world, chunk) {
         pos.push(vx, vy, vz);
         nor.push(nx, ny, nz);
         col.push(tmp.r, tmp.g, tmp.b);
+        vm.push(m);
         vidx[ci(x, y, z)] = vc++;
       }
     }
@@ -148,5 +149,6 @@ export function buildChunkGeometry(world, chunk) {
   geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   geo.setIndex(vc > 65535 ? new THREE.Uint32BufferAttribute(ind, 1) : new THREE.Uint16BufferAttribute(ind, 1));
   geo.computeBoundingSphere();
+  geo.userData.mats = Uint8Array.from(vm);
   return geo;
 }

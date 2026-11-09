@@ -13,6 +13,7 @@ import { Travelers, TRAVELER_BUYS } from './travelers.js';
 import { Horses } from './horses.js';
 import { Bandits } from './bandits.js';
 import { MiniMap } from './minimap.js';
+import { windUniform } from './vegetation.js';
 
 // Hotbar: building materials, then the rifle and placeable stations.
 const HOTBAR = [
@@ -35,6 +36,10 @@ const seed = save?.seed ?? ((Math.random() * 2 ** 31) | 0);
 // ---------- renderer, scene, lights ----------
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.setSize(innerWidth, innerHeight);
 document.getElementById('game').appendChild(renderer.domElement);
 const canvas = renderer.domElement;
@@ -45,23 +50,59 @@ const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.1, 12
 camera.rotation.order = 'YXZ';
 scene.add(camera);   // so the first-person rifle (a camera child) renders
 const fogFar = RENDER_RADIUS * CS * 0.95;
-scene.fog = new THREE.Fog(0x87c5f0, fogFar * 0.4, fogFar);
+scene.fog = new THREE.Fog(0x87c5f0, fogFar * 0.3, fogFar);
 
-const hemi = new THREE.HemisphereLight(0xcfe6ff, 0x6b5a45, 1);
+const hemi = new THREE.HemisphereLight(0xbfd8ff, 0x5a4a35, 1);
 const sunLight = new THREE.DirectionalLight(0xfff0d8, 2);
+// Soft shadows in a box that follows the player.
+sunLight.castShadow = true;
+sunLight.shadow.mapSize.set(2048, 2048);
+Object.assign(sunLight.shadow.camera, { left: -55, right: 55, top: 55, bottom: -55, near: 1, far: 400 });
+sunLight.shadow.bias = -0.0004;
+sunLight.shadow.normalBias = 0.6;
 scene.add(hemi, sunLight, sunLight.target);
 
-const water = new THREE.Mesh(
-  new THREE.PlaneGeometry(1600, 1600),
-  new THREE.MeshLambertMaterial({ color: 0x2d6e9e, transparent: true, opacity: 0.75, side: THREE.DoubleSide, depthWrite: false }),
-);
+// Water: glossy, gently rippling, tinted by the sky.
+const waterMat = new THREE.MeshStandardMaterial({ color: 0x24607e, roughness: 0.12, metalness: 0.0, transparent: true, opacity: 0.84, side: THREE.DoubleSide, depthWrite: false });
+waterMat.onBeforeCompile = (sh) => {
+  sh.uniforms.uTime = windUniform;
+  sh.vertexShader = 'varying vec3 vWPos;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+  sh.fragmentShader = 'uniform float uTime;\nvarying vec3 vWPos;\n' + sh.fragmentShader.replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
+    vec2 wq = vWPos.xz;
+    vec3 wn = vec3(sin(wq.x * 0.8 + uTime * 1.3) * 0.5 + sin(wq.x * 2.1 - wq.y * 1.7 + uTime * 2.1) * 0.25, 0.0,
+                   cos(wq.y * 0.9 + uTime * 1.1) * 0.5 + cos(wq.y * 2.3 + wq.x * 1.3 - uTime * 1.7) * 0.25);
+    normal = normalize(normal + (viewMatrix * vec4(wn * 0.14, 0.0)).xyz);`);
+};
+const water = new THREE.Mesh(new THREE.PlaneGeometry(1600, 1600), waterMat);
+water.userData.noShadow = true;
 water.rotation.x = -Math.PI / 2;
 water.position.y = WATER;
 scene.add(water);
 
 // Sky dome objects follow the camera.
 const sky = new THREE.Group();
-const sunMesh = new THREE.Mesh(new THREE.SphereGeometry(14, 16, 12), new THREE.MeshBasicMaterial({ color: 0xfff3c4, fog: false }));
+const skyMat = new THREE.ShaderMaterial({
+  uniforms: { top: { value: new THREE.Color() }, horizon: { value: new THREE.Color() }, sunDir: { value: new THREE.Vector3() }, sunCol: { value: new THREE.Color() } },
+  vertexShader: 'varying vec3 vDir; void main() { vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `uniform vec3 top; uniform vec3 horizon; uniform vec3 sunDir; uniform vec3 sunCol; varying vec3 vDir;
+    void main() {
+      vec3 d = normalize(vDir); float h = d.y;
+      vec3 c = mix(horizon, top, pow(clamp(h, 0.0, 1.0), 0.5));
+      if (h < 0.0) c = mix(horizon, horizon * 0.75, clamp(-h * 4.0, 0.0, 1.0));
+      float s = max(dot(d, sunDir), 0.0);
+      c += sunCol * (pow(s, 700.0) * 3.0 + pow(s, 10.0) * 0.28);
+      gl_FragColor = vec4(c, 1.0);
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>
+    }`,
+  side: THREE.BackSide, depthWrite: false,
+});
+const skyDome = new THREE.Mesh(new THREE.SphereGeometry(580, 32, 16), skyMat);
+skyDome.renderOrder = -1;
+skyDome.frustumCulled = false;
+skyDome.userData.noShadow = true;
+sky.add(skyDome);
+const sunMesh = new THREE.Mesh(new THREE.SphereGeometry(9, 16, 12), new THREE.MeshBasicMaterial({ color: 0xfff6dc, fog: false }));
 const moonMesh = new THREE.Mesh(new THREE.SphereGeometry(9, 16, 12), new THREE.MeshBasicMaterial({ color: 0xdfe6f5, fog: false }));
 const starPos = [];
 for (let i = 0; i < 900; i++) {
@@ -72,6 +113,7 @@ const starGeo = new THREE.BufferGeometry();
 starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starPos, 3));
 const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 1.6, sizeAttenuation: false, transparent: true, fog: false, depthWrite: false });
 sky.add(sunMesh, moonMesh, new THREE.Points(starGeo, starMat));
+sky.userData.noShadow = true;
 scene.add(sky);
 
 // Drifting clouds.
@@ -82,6 +124,7 @@ const clouds = new THREE.InstancedMesh(
   CLOUDS * PUFFS,
 );
 clouds.frustumCulled = false;
+clouds.userData.noShadow = true;
 const cloudData = [];
 for (let i = 0; i < CLOUDS; i++) {
   const puffs = [];
@@ -151,7 +194,11 @@ let aiming = false;
 
 let bounty = save?.bounty || null;
 let escort = null;
-if (save?.horse) horses.add(save.horse.x, save.horse.y, save.horse.z, true, save.horse.seed, save.horse.heading);
+if (save?.horse) horses.add(save.horse.x, save.horse.y, save.horse.z, true, save.horse.seed, save.horse.heading, save.horse.bags || null).rentUntil = save.horse.rentUntil ?? null;
+let stabledHorse = save?.stabledHorse || null;      // { seed, bags } while kept at a stable
+let rental = save?.rental || null;                  // { town, b, until } rented house
+let homePoint = save?.homePoint || null;            // where you wake up after dying
+const chests = save?.chests || {};                  // house chest contents by house id
 bandits.onDeath = (b) => {
   pickups.spawn('coin', 3 + Math.floor(Math.random() * 8), b.pos);
   if (Math.random() < 0.6) pickups.spawn('ammo', 2 + Math.floor(Math.random() * 3), b.pos);
@@ -265,7 +312,7 @@ function updateFood() {
 updateFood();
 
 function eat() {
-  const id = items.stew > 0 ? 'stew' : items.cooked > 0 ? 'cooked' : items.meat > 0 ? 'meat' : null;
+  const id = items.stew > 0 ? 'stew' : items.cooked > 0 ? 'cooked' : items.berries > 0 ? 'berries' : items.meat > 0 ? 'meat' : null;
   if (!id) { toast('Nothing to eat. Hunt animals for meat.'); return; }
   if (hunger >= MAX_HUNGER - 0.5) { toast("You're not hungry"); return; }
   items[id]--;
@@ -343,7 +390,8 @@ $('craftclose').addEventListener('click', closeCraft);
 
 // ---------- talking, trading & bounties ----------
 const SHOPS = {
-  merchant: { sells: [['cooked', 4], ['meat', 2], ['bandage', 8], ['campfire', 12], ['horse', 60]], buys: [['hide', 3], ['feather', 1], ['meat', 1]] },
+  merchant: { sells: [['cooked', 4], ['meat', 2], ['berries', 2], ['bandage', 8], ['campfire', 12]], buys: [['hide', 3], ['feather', 1], ['meat', 1], ['berries', 1]] },
+  stablehand: { sells: [['saddlebags', 35]], buys: [['saddlebags', 18]] },
   smith: { sells: [['ingot', 9], ['powder', 3], ['ammo', 3], ['rifle', 150]], buys: [['ingot', 5], ['powder', 2], ['hide', 2]] },
   keeper: { sells: [['stew', 6], ['cooked', 3]], buys: [['meat', 2], ['cooked', 2]] },
 };
@@ -506,6 +554,68 @@ function renderTalk(view, text) {
       });
     }
   }
+  if (view === 'stable') {
+    const own = horses.owned(), near = own && own.pos.distanceTo(player.pos) < 30 && player.mounted !== own;
+    say = say || (stabledHorse ? '"Your horse is safe in our stalls. Any stable in the land can bring it out for you."'
+      : own ? '"Fine animal. I can keep it safe here: fed, watered, and ready at any stable."'
+        : '"Looking for a horse? I\'ve good ones to sell, or one to rent for the day."');
+    const pay = (c) => { if (items.coin < c) { renderTalk('stable', '"Come back when you have the coin."'); return false; } items.coin -= c; updateHotbar(); return true; };
+    const spawnHorse = (seed, bags) => {
+      const st = n.town.stable, f = [Math.sin(st.rot), Math.cos(st.rot)];
+      const x = st.door[0] + f[0] * 3, z = st.door[1] + f[1] * 3;
+      return horses.add(x, world.groundY(x, n.town.y + 2, z), z, true, seed, st.rot, bags);
+    };
+    if (own && !own.rentUntil) btn(near ? 'Stable my horse (3 c)' : 'Stable my horse (bring it closer)', () => {
+      if (!pay(3)) return;
+      stabledHorse = { seed: own.seed, bags: own.bags };
+      horses.remove(own);
+      renderTalk('stable', '"We\'ll take good care of it."');
+    }, !near);
+    if (stabledHorse && !own) btn('Collect my horse', () => {
+      spawnHorse(stabledHorse.seed, stabledHorse.bags);
+      stabledHorse = null;
+      renderTalk('stable', '"Here you are, all brushed and fed."');
+    });
+    if (!stabledHorse) btn('Buy a horse (60 c)', () => {
+      if (!pay(60)) return;
+      for (const h of horses.list) h.owned = false;
+      spawnHorse();
+      renderTalk('stable', '"She\'s yours. Treat her well."');
+    });
+    if (!own && !stabledHorse) btn('Rent a horse for a day (12 c)', () => {
+      if (!pay(12)) return;
+      spawnHorse().rentUntil = time + 1;
+      renderTalk('stable', '"Have it back by this time tomorrow. It knows the way home if you don\'t."');
+    });
+    if (own && !own.bags) btn(items.saddlebags ? 'Fit my saddlebags' : 'Fit saddlebags (35 c)', () => {
+      if (!near) { renderTalk('stable', '"Bring your horse over first."'); return; }
+      if (items.saddlebags) items.saddlebags--; else if (!pay(35)) return;
+      horses.fitBags(own);
+      updateHotbar();
+      renderTalk('stable', '"There. Press B by your horse to pack them."');
+    });
+  }
+  if (view === 'lodging') {
+    const t2 = n.town, houses = t2.buildings.filter((b) => b.type === 'house');
+    const mine = rental && rental.town === t2.id && rental.until > time;
+    say = say || (mine ? `"Your house is ready, ${Math.ceil(rental.until - time)} more days paid."` : '"A bed for the night, or a house of your own for the week?"');
+    btn('Rent a room for the night (8 c)', () => {
+      if (items.coin < 8) { renderTalk('lodging', '"Eight coins, friend."'); return; }
+      items.coin -= 8;
+      homePoint = { x: t2.tavern.door[0], y: t2.y, z: t2.tavern.door[1] };
+      closeTalk(false);
+      sleep(`You slept at the ${t2.name} inn.`);
+    });
+    if (!mine) btn('Rent a house for a week (45 c)', () => {
+      if (items.coin < 45) { renderTalk('lodging', '"Forty-five coins for the week."'); return; }
+      items.coin -= 45;
+      const b = houses.reduce((best, h) => (Math.hypot(h.x - t2.x, h.z - t2.z) < Math.hypot(best.x - t2.x, best.z - t2.z) ? h : best), houses[0]);
+      rental = { town: t2.id, b: t2.buildings.indexOf(b), until: time + 7 };
+      homePoint = { x: b.door[0], y: t2.y, z: b.door[1] };
+      updateHotbar();
+      renderTalk('lodging', `"It's the house ${dirName(b.x - t2.x, b.z - t2.z)} of the square. Look for the green lamp at the door. There's a chest and a good bed."`);
+    });
+  }
   if (view === 'escort') {
     if (escort) say = `"You're already guarding a wagon to ${escort.dest.name}. Finish that first."`;
     else {
@@ -525,6 +635,8 @@ function renderTalk(view, text) {
   if (shopDef) btn('Trade', () => renderTalk('trade'));
   if (n.job === 'guard') btn(bounty ? (bounty.have >= bounty.need ? 'Claim bounty' : 'About that job…') : 'Any work?', () => renderTalk('bounty'));
   if (!trav && n.job === 'merchant' && n.town.roads && n.town.roads.length) btn('Escort work', () => renderTalk('escort'));
+  if (!trav && n.job === 'stablehand') btn('Stable services', () => renderTalk('stable'));
+  if (!trav && n.job === 'keeper') btn('Lodging', () => renderTalk('lodging'));
   btn('Goodbye', () => closeTalk());
 }
 $('talkclose').addEventListener('click', () => closeTalk());
@@ -578,6 +690,124 @@ function updateEscort(dt) {
   }
   escort.raiders = escort.raiders.filter((b) => !b.dead && bandits.list.includes(b));
   wg.halt = escort.raiders.some((b) => b.state === 'fight' && b.pos.distanceTo(wp) < 45);
+}
+
+// ---------- carrying ----------
+const ITEM_WEIGHT = { coin: 0, ammo: 0.05, meat: 0.5, cooked: 0.5, berries: 0.1, stew: 0.5, hide: 1, feather: 0.1, ingot: 2, powder: 0.3,
+  rifle: 4, bandage: 0.2, campfire: 6, forge: 15, horse: 0, saddlebags: 3 };
+const MAT_WEIGHT = 0.08, CARRY = 50, BAG_CAP = 100, CHEST_CAP = 400;
+const keyWeight = (k) => (k[0] === 'm' ? MAT_WEIGHT : ITEM_WEIGHT[k.slice(1)] ?? 1);
+const keyName = (k) => (k[0] === 'm' ? MAT_INFO[+k.slice(1)].name : ITEMS[k.slice(1)].name);
+const keyColor = (k) => (k[0] === 'm' ? MAT_INFO[+k.slice(1)].color : ITEMS[k.slice(1)].color);
+function carriedStore() {
+  const out = {};
+  inv.forEach((n, i) => { if (n > 0 && MAT_INFO[i] && i !== MAT.BEDROCK) out['m' + i] = n; });
+  for (const [k, n] of Object.entries(items)) if (n > 0 && k !== 'horse') out['i' + k] = n;
+  return out;
+}
+const storeWeight = (st) => Object.entries(st).reduce((w, [k, n]) => w + keyWeight(k) * n, 0);
+const carriedWeight = () => (creative ? 0 : storeWeight(carriedStore()));
+function addCarried(k, n) { if (k[0] === 'm') inv[+k.slice(1)] += n; else items[k.slice(1)] += n; }
+
+let stashOpen = false, stash = null;   // { title, store, cap }
+const stashEl = $('stash');
+function openStash(title, store, cap) {
+  stash = { title, store, cap };
+  stashOpen = true;
+  renderStash();
+  document.exitPointerLock();
+}
+function closeStash(relock = true) {
+  stashOpen = false;
+  stashEl.classList.add('hidden');
+  if (relock) { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => menu.classList.remove('hidden')); }
+  else menu.classList.remove('hidden');
+}
+function renderStash() {
+  const st = stash.store, used = storeWeight(st);
+  $('stashtitle').textContent = stash.title;
+  $('stashinfo').textContent = `You carry ${carriedWeight().toFixed(1)} / ${CARRY}  ·  ${stash.title} ${used.toFixed(1)} / ${stash.cap}`;
+  const list = (el, entries, toStash) => {
+    el.innerHTML = entries.length ? '' : '<div class="hint">Empty</div>';
+    for (const [k, n] of entries) {
+      const row = document.createElement('div');
+      row.className = 'shoprow';
+      row.innerHTML = `<span class="swatch" style="background:${hex(keyColor(k))}"></span><span class="nm">${keyName(k)}</span><span class="pr">${n}</span>`;
+      for (const amt of [1, 10, Infinity]) {
+        const b = document.createElement('button');
+        b.textContent = amt === Infinity ? 'All' : amt;
+        b.addEventListener('click', () => {
+          let m = Math.min(n, amt);
+          if (toStash) {
+            const room = Math.floor((stash.cap - storeWeight(st)) / Math.max(keyWeight(k), 1e-3));
+            m = Math.min(m, keyWeight(k) === 0 ? m : room);
+            if (m <= 0) { toast(`The ${stash.title.toLowerCase()} is full`); return; }
+            addCarried(k, -m); st[k] = (st[k] || 0) + m;
+          } else {
+            st[k] -= m; if (st[k] <= 0) delete st[k];
+            addCarried(k, m);
+          }
+          updateHotbar(); renderStash();
+        });
+        row.appendChild(b);
+      }
+      el.appendChild(row);
+    }
+  };
+  list($('stashmine'), Object.entries(carriedStore()), true);
+  list($('stashtheirs'), Object.entries(st), false);
+}
+$('stashclose').addEventListener('click', () => closeStash());
+
+function openBags() {
+  const h = horses.owned();
+  if (!h || (player.mounted !== h && h.pos.distanceTo(player.pos) > 4)) { toast('Stand next to your horse to use its saddlebags'); return; }
+  if (!h.bags) {
+    if (items.saddlebags > 0) { items.saddlebags--; horses.fitBags(h); toast('You fit the saddlebags to your horse'); updateHotbar(); }
+    else { toast('Your horse has no saddlebags. Craft them, or buy them at a stable.'); return; }
+  }
+  openStash('Saddlebags', h.bags, BAG_CAP);
+}
+
+// ---------- sleeping & houses ----------
+const fadeEl = $('fade');
+function sleep(msg) {
+  fadeEl.classList.add('on');
+  setTimeout(() => {
+    const hour = (time % 1) * 24;
+    const wake = 7 / 24;
+    time = Math.floor(time) + wake + (hour >= 7 ? 1 : 0);
+    player.health = player.maxHealth;
+    hunger = Math.max(0, hunger - 3);
+    for (const c of creatures.list.slice()) if (c.def.night) creatures.remove(c);
+    updateHealth(); updateFood();
+    toast(`${msg} You wake rested at dawn.`);
+    setTimeout(() => fadeEl.classList.remove('on'), 400);
+    saveGame();
+  }, 900);
+}
+function myHouse() {
+  if (!rental || rental.until <= time) return null;
+  const t = [...towns.active.values()].find((tt) => tt.id === rental.town);
+  return t ? { town: t, b: t.buildings[rental.b] } : null;
+}
+const houseLamp = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.32, 0.25), new THREE.MeshBasicMaterial({ color: 0x5aff8a }));
+houseLamp.userData.noShadow = true;
+houseLamp.visible = false;
+scene.add(houseLamp);
+function openHouse(h) {
+  talkNpc = null;
+  talkOpen = true;
+  $('talkname').textContent = 'Your house';
+  $('talkjob').textContent = `${h.town.name}  ·  paid for ${Math.max(0, Math.ceil(rental.until - time))} more days`;
+  $('talktext').textContent = 'A narrow bed, a table, a stout chest. Home, for now.';
+  const opts = $('talkopts');
+  opts.innerHTML = ''; $('talkshop').innerHTML = '';
+  const btn = (label, fn) => { const b = document.createElement('button'); b.className = 'secondary'; b.textContent = label; b.addEventListener('click', fn); opts.appendChild(b); };
+  btn('Sleep until dawn', () => { closeTalk(false); homePoint = { x: h.b.door[0], y: h.town.y, z: h.b.door[1] }; sleep('You slept in your house.'); });
+  btn('Open the chest', () => { talkOpen = false; talkEl.classList.add('hidden'); const id = `${rental.town}:${rental.b}`; chests[id] = chests[id] || {}; openStash('Chest', chests[id], CHEST_CAP); stashEl.classList.remove('hidden'); });
+  btn('Leave', () => closeTalk());
+  document.exitPointerLock();
 }
 
 // ---------- horses ----------
@@ -637,7 +867,8 @@ function respawn() {
   player.health = player.maxHealth;
   hunger = Math.max(hunger, 12);
   updateFood();
-  player.pos.copy(spawn);
+  if (homePoint) player.pos.set(homePoint.x, homePoint.y + 0.3, homePoint.z);
+  else player.pos.copy(spawn);
   player.vel.set(0, 0, 0);
   player.fallImpact = 0;
   deathEl.style.display = 'none';
@@ -651,6 +882,7 @@ function saveGame() {
     localStorage.setItem(SAVE_KEY, JSON.stringify({
       v: 1, seed, ops: world.ops, removedTrees: [...world.removedTrees], inv, items, creative, time, health: player.health, hunger,
       structures: structures.serialize(), townRep: towns.serializeRep(), bounty, horse: horses.serialize(), ...bandits.serialize(),
+      stabledHorse, rental, homePoint, chests, pickedBushes: Object.fromEntries(world.picked),
       player: { x: player.pos.x, y: player.pos.y, z: player.pos.z, yaw: player.yaw, pitch: player.pitch },
     }));
   } catch {
@@ -663,6 +895,11 @@ addEventListener('beforeunload', saveGame);
 // ---------- input ----------
 const keys = new Set();
 addEventListener('keydown', (e) => {
+  if (stashOpen && !locked) {
+    if (e.code === 'KeyB') closeStash();
+    else if (e.code === 'Escape') closeStash(false);
+    return;
+  }
   if (talkOpen && !locked) {
     if (e.code === 'KeyT') closeTalk();
     else if (e.code === 'Escape') closeTalk(false);
@@ -679,8 +916,11 @@ addEventListener('keydown', (e) => {
   if (e.code === 'Tab') { e.preventDefault(); openCraft(); return; }
   if (e.code === 'KeyR') eat();
   if (e.code === 'KeyH') useBandage();
+  if (e.code === 'KeyB') openBags();
   if (e.code === 'KeyT') {
-    if (target && target.npc) {
+    const house = myHouse();
+    if (house && Math.hypot(player.pos.x - house.b.door[0], player.pos.z - house.b.door[1]) < 2.8) openHouse(house);
+    else if (target && target.npc) {
       const n = target.npc;
       if (mgr(n).canTalk(n) && npcs.law.wanted === 0) openTalk(n);
       else if (n.job !== 'guard' && npcs.law.wanted > 0) mgr(n).say(n, 'Get away from me!');
@@ -702,7 +942,7 @@ addEventListener('keydown', (e) => {
     toggleMount();
   } else if (e.code === 'KeyV') {
     const r = horses.whistle(player.pos);
-    toast(r === 'none' ? "You don't own a horse yet. Merchants sell them." : r === 'far' ? 'Your horse is too far away to hear you' : 'You whistle for your horse');
+    toast(r === 'none' ? (stabledHorse ? 'Your horse is at the stable. Collect it from any stablehand.' : "You don't own a horse yet. Stables sell and rent them.") : r === 'far' ? 'Your horse is too far away to hear you' : 'You whistle for your horse');
   } else if (e.code === 'KeyM') {
     bigMapOpen = !bigMapOpen;
     bigMapEl.classList.toggle('hidden', !bigMapOpen);
@@ -727,11 +967,12 @@ $('newworld').addEventListener('click', () => {
 });
 document.addEventListener('pointerlockchange', () => {
   locked = document.pointerLockElement === canvas;
-  menu.classList.toggle('hidden', locked || craftOpen || talkOpen);
+  menu.classList.toggle('hidden', locked || craftOpen || talkOpen || stashOpen);
+  stashEl.classList.toggle('hidden', locked || !stashOpen);
   craftEl.classList.toggle('hidden', locked || !craftOpen);
   talkEl.classList.toggle('hidden', locked || !talkOpen);
   if (locked) {
-    craftOpen = false;
+    craftOpen = false; stashOpen = false;
     if (talkOpen) { talkOpen = false; if (talkNpc) mgr(talkNpc).endTalk(talkNpc); talkNpc = null; }
   }
   if (!locked) {
@@ -777,6 +1018,7 @@ const highlight = new THREE.Mesh(
   new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.22, depthWrite: false }),
 );
 highlight.visible = false;
+highlight.userData.noShadow = true;
 scene.add(highlight);
 let target = null;
 const dir = new THREE.Vector3(), tmpV = new THREE.Vector3();
@@ -817,6 +1059,12 @@ function updateTarget() {
     if (t && t.alive) target = { tree: t, point: hit.point };
     return;
   }
+  if (hit.object.userData.kind === 'bush') {
+    const b = hit.object.userData.bushes[hit.instanceId];
+    if (b) target = { bush: b, point: hit.point };
+    return;
+  }
+  if (hit.object.userData.kind === 'rock') return;
   const n = world.gradient(hit.point.x, hit.point.y, hit.point.z, new THREE.Vector3()).negate();
   if (n.lengthSq() < 1e-8) n.set(0, 1, 0); else n.normalize();
   target = { point: hit.point.clone(), normal: n };
@@ -857,6 +1105,13 @@ function doDig() {
     structures.remove(target.structure);
     toast(`Picked up ${ITEMS[target.structure.type].name.toLowerCase()}`);
     updateHotbar();
+    return;
+  }
+  if (target.bush) {
+    const n = world.pickBerries(target.bush);
+    if (n) { items.berries += n; toast(`+${n} ${target.bush.blue ? 'blueberries' : 'wild raspberries'}`); updateHotbar(); }
+    else toast(target.bush.berry ? 'Already picked. The berries will grow back.' : 'Just a bush');
+    cooldown = 0.4;
     return;
   }
   if (target.tree) {
@@ -934,7 +1189,7 @@ function placeStructure(type) {
 }
 
 function doBuild() {
-  if (!target || target.tree || target.creature || target.structure || target.npc || target.bandit || target.horse) return;
+  if (!target || target.tree || target.creature || target.structure || target.npc || target.bandit || target.horse || target.bush) return;
   const s = selected();
   if (s.i) { if (s.i !== 'rifle') placeStructure(s.i); return; }
   const mat = s.m;
@@ -949,7 +1204,8 @@ function doBuild() {
 
 // ---------- sky ----------
 const sunDir = new THREE.Vector3();
-const DAY = new THREE.Color(0x8cc8f2), NIGHT = new THREE.Color(0x0a1026), DUSK = new THREE.Color(0xf2a36b);
+const DAY = new THREE.Color(0xb4d6ee), NIGHT = new THREE.Color(0x0c1430), DUSK = new THREE.Color(0xf2a36b);
+const DAY_TOP = new THREE.Color(0x3a78cc), NIGHT_TOP = new THREE.Color(0x02040c), DUSK_TOP = new THREE.Color(0x5a5aa0);
 const UNDER = new THREE.Color(0x15476a);
 const skyCol = new THREE.Color(), warm = new THREE.Color(0xffb37a), white = new THREE.Color(0xfff0d8);
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
@@ -960,15 +1216,20 @@ function updateSky() {
   sunDir.set(Math.cos(a), Math.sin(a), 0.35).normalize();
   const day = smooth(-0.12, 0.25, sunDir.y);
   const dusk = Math.max(0, 1 - Math.abs(sunDir.y) / 0.3);
-  skyCol.copy(NIGHT).lerp(DAY, day).lerp(DUSK, dusk * 0.45);
-
+  skyCol.copy(NIGHT).lerp(DAY, day).lerp(DUSK, dusk * 0.5);
+  skyMat.uniforms.horizon.value.copy(skyCol);
+  skyMat.uniforms.top.value.copy(NIGHT_TOP).lerp(DAY_TOP, day).lerp(DUSK_TOP, dusk * 0.25);
+  skyMat.uniforms.sunDir.value.copy(sunDir);
+  skyMat.uniforms.sunCol.value.copy(white).lerp(warm, dusk).multiplyScalar(Math.max(0, Math.min(1, sunDir.y * 4 + 0.4)));
+  waterMat.emissive.copy(skyCol).multiplyScalar(0.18);
+  sunLight.target.position.copy(camera.position);
   if (sunDir.y > -0.05) {
-    sunLight.position.copy(sunDir);
+    sunLight.position.copy(camera.position).addScaledVector(sunDir, 150);
     sunLight.intensity = 0.2 + 2.2 * day;
     sunLight.color.copy(white).lerp(warm, dusk * 0.7);
   } else {
-    sunLight.position.copy(sunDir).negate();
-    sunLight.intensity = 0.35;
+    sunLight.position.copy(camera.position).addScaledVector(sunDir, -150);
+    sunLight.intensity = 0.3;
     sunLight.color.setHex(0x9fb4ff);
   }
   hemi.intensity = 0.35 + 0.95 * day;
@@ -1041,8 +1302,20 @@ function giveItem(id, n) {
 let last = performance.now(), hudTimer = 0, ready = false;
 function pad2(n) { return String(n).padStart(2, '0'); }
 
+let shadowScanT = 0, wasOver = false;
+function applyShadows() {
+  scene.traverse((o) => {
+    if (!o.isMesh || o.userData.sh) return;
+    o.userData.sh = 1;
+    let p = o, skip = false;
+    while (p) { if (p.userData.noShadow) { skip = true; break; } p = p.parent; }
+    if (!skip) { o.castShadow = true; o.receiveShadow = true; }
+  });
+}
+
 function frame(now) {
   requestAnimationFrame(frame);
+  windUniform.value = now / 1000;
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
 
@@ -1064,6 +1337,29 @@ function frame(now) {
     travelers.update(dt, ctx);
     bandits.update(dt, ctx);
     updateEscort(dt);
+    world.day = time;
+    // Carrying too much slows you down.
+    const load = carriedWeight();
+    const over = load > CARRY;
+    player.speedMul = over ? Math.max(0.35, 1 - (load - CARRY) / CARRY) * 0.7 : 1;
+    if (over && !wasOver) toast('You are carrying too much and slow down. Store things in saddlebags or a chest.');
+    wasOver = over;
+    // Rented horses go home when time is up; house rentals expire.
+    for (const h of horses.list.slice()) {
+      if (h.rentUntil && time > h.rentUntil) {
+        if (player.mounted === h) toggleMount();
+        if (h.bags) for (const [k, n] of Object.entries(h.bags)) addCarried(k, n);
+        horses.remove(h);
+        toast('Your rented horse has gone back to its stable');
+      }
+    }
+    if (rental && rental.until <= time && !rental.expired) { rental.expired = true; toast('Your house rental has run out. Your chest will be kept for you.'); }
+    const hs = myHouse();
+    houseLamp.visible = !!hs;
+    if (hs) {
+      const b = hs.b;
+      houseLamp.position.set(b.door[0] + Math.cos(b.rot) * 0.9, hs.town.y + 2.3, b.door[1] - Math.sin(b.rot) * 0.9);
+    }
     hazards.update(dt, ctx);
     pickups.update(dt, player.pos, giveItem);
     sinceHurt += dt;
@@ -1138,6 +1434,8 @@ function frame(now) {
 
   updateSky();
   updateClouds(dt);
+  shadowScanT -= dt;
+  if (shadowScanT <= 0) { shadowScanT = 0.5; applyShadows(); }
   renderer.render(scene, camera);
 
   // Maps.
@@ -1152,9 +1450,11 @@ function frame(now) {
   // Context prompt.
   let pr = '';
   if (locked && !dead) {
-    if (player.mounted) pr = 'G  Dismount';
+    if (player.mounted) pr = horses.owned() && horses.owned().bags ? 'G  Dismount  ·  B  Saddlebags' : 'G  Dismount';
     else if (horses.nearest(player.pos, 3.2)) pr = horses.nearest(player.pos, 3.2).owned ? 'G  Mount your horse' : 'G  Take this horse';
+    else if (myHouse() && Math.hypot(player.pos.x - myHouse().b.door[0], player.pos.z - myHouse().b.door[1]) < 2.8) pr = 'T  Enter your house';
     else if (target && target.npc && mgr(target.npc).canTalk(target.npc)) pr = `T  Talk to ${target.npc.name}`;
+    else if (target && target.bush && target.bush.berry && target.bush.ripe) pr = 'Left click  Pick berries';
     else if (escort && escort.wagon.state === 'wait') pr = `Meet the escort wagon (${Math.round(escort.wagon.horseRoot.position.distanceTo(player.pos))} m)`;
   }
   if (promptEl.textContent !== pr) promptEl.textContent = pr;
@@ -1164,7 +1464,7 @@ function frame(now) {
     hudTimer = 0.2;
     const f = time % 1, hrs = Math.floor(f * 24), mins = Math.floor((f * 24 - hrs) * 60);
     const p = player.pos;
-    infoEl.textContent = `Day ${Math.floor(time) + 1}  ${pad2(hrs)}:${pad2(mins)}  ·  ${p.x.toFixed(0)}, ${p.y.toFixed(0)}, ${p.z.toFixed(0)}  ·  ${items.coin} coins  ·  ${creative ? (player.flying ? 'Creative (flying)' : 'Creative') : 'Survival'}`;
+    infoEl.textContent = `Day ${Math.floor(time) + 1}  ${pad2(hrs)}:${pad2(mins)}  ·  ${p.x.toFixed(0)}, ${p.y.toFixed(0)}, ${p.z.toFixed(0)}  ·  ${items.coin} coins  ·  load ${carriedWeight().toFixed(0)}/${CARRY}${carriedWeight() > CARRY ? ' (overloaded)' : ''}  ·  ${creative ? (player.flying ? 'Creative (flying)' : 'Creative') : 'Survival'}`;
     const w = npcs.law.wanted;
     wantedEl.innerHTML = w ? '★'.repeat(w) + '<span class="off">' + '★'.repeat(5 - w) + '</span>' : '';
     wantedEl.classList.toggle('seen', npcs.law.seen);
@@ -1206,6 +1506,6 @@ function drawMap(g, cx, cz, radius, size, mpp, circle) {
 
 // Handle for debugging from the console.
 window.driftland = { world, player, inv, items, scene, camera, creatures, hazards, pickups, structures, rifle, ctx, npcs, towns, travelers,
-  horses, bandits, minimap, toggleMount, startEscort, get escort() { return escort; }, __upd: () => updateEscort(1 / 60), toggleMap: () => { bigMapOpen = !bigMapOpen; bigMapEl.classList.toggle("hidden", !bigMapOpen); },
+  horses, bandits, minimap, toggleMount, startEscort, openBags, carriedWeight, myHouse, openHouse, get rental() { return rental; }, get homePoint() { return homePoint; }, respawn, get time() { return time; }, get escort() { return escort; }, __upd: () => updateEscort(1 / 60), toggleMap: () => { bigMapOpen = !bigMapOpen; bigMapEl.classList.toggle("hidden", !bigMapOpen); },
   openTalk, renderTalk, get bounty() { return bounty; },
   craft, RECIPES, shoot, eat, openCraft, renderCraft, select: (i) => { sel = i; updateHotbar(); }, get hunger() { return hunger; }, get target() { return target; }, doDig, doBuild, setTime: (t) => { time = t; } };

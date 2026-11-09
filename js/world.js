@@ -5,6 +5,7 @@ import { Noise, makeRng } from './noise.js';
 import { buildChunkGeometry } from './mesher.js';
 import { TownMap } from './towns.js';
 import { RoadMap, ROAD_HALF } from './roads.js';
+import { GEO, MATS, buildGrass } from './vegetation.js';
 
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
 const round2 = (v) => Math.round(v * 100) / 100;
@@ -24,7 +25,21 @@ export class World {
     this.colliderProvider = null;
     this.ops = save?.ops ? save.ops.slice() : [];
     this.removedTrees = new Set(save?.removedTrees || []);
+    this.picked = new Map(Object.entries(save?.pickedBushes || {}));
+    this.day = 0;
     this.terrainMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+    // Break up the flat vertex colours with fine procedural detail.
+    this.terrainMat.onBeforeCompile = (sh) => {
+      sh.vertexShader = 'varying vec3 vWPos;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+      sh.fragmentShader = `varying vec3 vWPos;
+        float hsh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        float vnz(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(hsh(i), hsh(i + vec2(1.0, 0.0)), f.x), mix(hsh(i + vec2(0.0, 1.0)), hsh(i + vec2(1.0, 1.0)), f.x), f.y); }
+        ` + sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+          vec2 tp = vWPos.xz + vWPos.y * 0.37;
+          float dn = vnz(tp * 0.8) * 0.16 + vnz(tp * 3.1 + 17.0) * 0.1 + vnz(tp * 9.0) * 0.06 + (vnz(tp * 0.11) - 0.5) * 0.14;
+          diffuseColor.rgb *= 0.84 + dn;`);
+    };
 
     this.trunkGeo = new THREE.CylinderGeometry(0.2, 0.3, 1, 7);
     this.trunkGeo.translate(0, 0.5, 0);
@@ -132,7 +147,7 @@ export class World {
       cx, cz,
       dens: new Float32Array(CS * CS * SY),
       mats: new Uint8Array(CS * CS * SY),
-      mesh: null, trees: [], treeMeshes: [], dirty: true, meshed: false,
+      mesh: null, trees: [], bushes: [], rocks: [], treeMeshes: [], grassMeshes: [], dirty: true, meshed: false,
     };
     const x0 = cx * CS, z0 = cz * CS;
     for (let lx = 0; lx < CS; lx++)
@@ -141,6 +156,7 @@ export class World {
     for (const op of this.ops) if (this.opTouches(c, op)) this.applyOp(c, op, null);
     this.chunks.set(ckey(cx, cz), c);
     this.placeTrees(c);
+    this.placeBushes(c);
     return c;
   }
 
@@ -261,11 +277,11 @@ export class World {
   placeTrees(c) {
     const rng = makeRng((Math.imul(c.cx, 73856093) ^ Math.imul(c.cz, 19349663) ^ this.seed) >>> 0);
     const x0 = c.cx * CS, z0 = c.cz * CS;
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < 24; i++) {
       const r1 = rng(), r2 = rng(), r3 = rng(), r4 = rng(), r5 = rng(), r6 = rng();
       const x = x0 + r1 * CS, z = z0 + r2 * CS;
       const forest = this.forestAt(x, z);
-      const p = Math.min(0.9, Math.max(0.04, 0.2 + forest * 1.8));
+      const p = Math.min(0.92, Math.max(0.05, 0.24 + forest * 2.0));
       if (r3 > p) continue;
       const h = this.heightAt(x, z);
       if (h < WATER + 1.8 || h > 55) continue;
@@ -276,50 +292,131 @@ export class World {
       const id = `${c.cx},${c.cz},${i}`;
       if (this.removedTrees.has(id)) continue;
       if (this.sample(x, h - 0.6, z) <= 0 || this.sample(x, h + 1.5, z) > 0) continue;
-      const pine = h > 40 || r4 < 0.2;
+      const pine = h > 40 || r4 < 0.18;
+      const birch = !pine && r4 > 0.8;
       c.trees.push({
-        id, x, y: h, z, pine, alive: true, refs: [],
-        th: pine ? 1.6 + r5 * 1.2 : 2.4 + r5 * 1.6,
-        s: 1.5 + r6 * 0.9, snowy: h > 44, rot: r4 * Math.PI * 2,
+        id, x, y: h, z, pine, birch, alive: true, refs: [],
+        th: pine ? 1.6 + r5 * 1.2 : birch ? 3.2 + r5 * 1.8 : 2.4 + r5 * 1.6,
+        s: (birch ? 1.2 : 1.5) + r6 * 0.9, snowy: h > 44, rot: r4 * Math.PI * 2,
       });
     }
   }
 
+  // Wild bushes (some with berries) and rocks.
+  placeBushes(c) {
+    const rng = makeRng((Math.imul(c.cx, 2654435761) ^ Math.imul(c.cz, 40503) ^ this.seed ^ 0xb055) >>> 0);
+    const x0 = c.cx * CS, z0 = c.cz * CS;
+    for (let i = 0; i < 26; i++) {
+      const r1 = rng(), r2 = rng(), r3 = rng(), r4 = rng(), r5 = rng();
+      const x = x0 + r1 * CS, z = z0 + r2 * CS;
+      const forest = this.forestAt(x, z);
+      const rock = r4 < 0.16;
+      if (r3 > (rock ? 0.6 : 0.3 + Math.max(0, forest) * 0.8)) continue;
+      const h = this.heightAt(x, z);
+      if (h < WATER + 1 || h > (rock ? 62 : 50)) continue;
+      if (this.towns.near(x, z, 4) || this.roads.onRoad(x, z) < ROAD_HALF + 1.5) continue;
+      if (this.sample(x, h - 0.4, z) <= 0 || this.sample(x, h + 1.0, z) > 0) continue;
+      const id = `${c.cx},${c.cz},${i}`;
+      if (rock) c.rocks.push({ x, y: h, z, s: 0.5 + r5 * 1.3, rot: r2 * 6.28 });
+      else c.bushes.push({ id, x, y: h, z, s: 0.6 + r5 * 0.7, rot: r1 * 6.28, berry: r5 < 0.35 && h < 44, blue: r2 < 0.4, refs: [] });
+    }
+  }
+
   buildTrees(c) {
-    if (!c.trees.length) return;
-    const rounds = c.trees.filter((t) => !t.pine), pines = c.trees.filter((t) => t.pine);
-    const trunks = new THREE.InstancedMesh(this.trunkGeo, this.trunkMat, c.trees.length);
-    const mk = (list, geo) => list.length ? new THREE.InstancedMesh(geo, this.leafMat, list.length) : null;
-    const leaves = mk(rounds, this.leafGeo), cones = mk(pines, this.pineGeo);
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), s = new THREE.Vector3();
     const col = new THREE.Color(), up = new THREE.Vector3(0, 1, 0);
-
-    c.trees.forEach((t, i) => {
-      q.setFromAxisAngle(up, t.rot);
-      m.compose(p.set(t.x, t.y - 0.4, t.z), q, s.set(1, t.th + 0.4, 1));
-      trunks.setMatrixAt(i, m);
-      t.refs.push([trunks, i]);
-    });
-    rounds.forEach((t, i) => {
-      m.compose(p.set(t.x, t.y + t.th + t.s * 0.45, t.z), q.setFromAxisAngle(up, t.rot), s.set(t.s, t.s * 0.85, t.s));
-      leaves.setMatrixAt(i, m);
-      leaves.setColorAt(i, col.setHSL(0.24 + (t.rot % 1) * 0.06, 0.5, 0.3 + (t.s - 1.5) * 0.06));
-      t.refs.push([leaves, i]);
-    });
-    pines.forEach((t, i) => {
-      m.compose(p.set(t.x, t.y + t.th * 0.4, t.z), q.setFromAxisAngle(up, t.rot), s.set(t.s * 0.8, t.s * 2.7, t.s * 0.8));
-      cones.setMatrixAt(i, m);
-      cones.setColorAt(i, t.snowy ? col.setHSL(0.45, 0.15, 0.62) : col.setHSL(0.37, 0.42, 0.22));
-      t.refs.push([cones, i]);
-    });
-
-    for (const [mesh, list] of [[trunks, c.trees], [leaves, rounds], [cones, pines]]) {
-      if (!mesh) continue;
-      mesh.userData = { kind: 'tree', trees: list };
+    const add = (mesh, kind, list) => {
+      mesh.userData = { kind, trees: list, bushes: list };
       mesh.computeBoundingSphere();
       this.scene.add(mesh);
       c.treeMeshes.push(mesh);
+    };
+    if (c.trees.length) {
+      const trunks = new THREE.InstancedMesh(GEO.trunk, MATS.bark, c.trees.length);
+      c.trees.forEach((t, i) => {
+        q.setFromAxisAngle(up, t.rot);
+        const girth = t.birch ? 0.75 : t.pine ? 0.9 : 1 + (t.s - 1.5) * 0.4;
+        m.compose(p.set(t.x, t.y - 0.4, t.z), q, s.set(girth, t.th + (t.pine ? 0.6 : 0.9), girth));
+        trunks.setMatrixAt(i, m);
+        trunks.setColorAt(i, t.birch ? col.setHex(0xe2ddd0) : col.setHex(t.pine ? 0x4e3a2a : 0x5e4630));
+        t.refs.push([trunks, i]);
+      });
+      add(trunks, 'tree', c.trees);
+      for (const kind of ['oak', 'birch', 'pine']) {
+        const list = c.trees.filter((t) => (kind === 'pine' ? t.pine : kind === 'birch' ? t.birch : !t.pine && !t.birch));
+        if (!list.length) continue;
+        const im = new THREE.InstancedMesh(GEO[kind], MATS.leaves, list.length);
+        list.forEach((t, i) => {
+          q.setFromAxisAngle(up, t.rot);
+          if (kind === 'pine') {
+            m.compose(p.set(t.x, t.y + t.th * 0.45, t.z), q, s.set(t.s * 0.95, t.s * 1.35, t.s * 0.95));
+            im.setColorAt(i, t.snowy ? col.setHSL(0.42, 0.12, 0.66) : col.setHSL(0.36, 0.45, 0.2 + (t.rot % 0.3) * 0.1));
+          } else if (kind === 'birch') {
+            m.compose(p.set(t.x, t.y + t.th * 0.8, t.z), q, s.set(t.s, t.s * 1.05, t.s));
+            im.setColorAt(i, col.setHSL(0.2 + (t.rot % 0.4) * 0.05, 0.55, 0.42));
+          } else {
+            m.compose(p.set(t.x, t.y + t.th + t.s * 0.45, t.z), q, s.set(t.s * 1.15, t.s, t.s * 1.15));
+            im.setColorAt(i, col.setHSL(0.25 + (t.rot % 1) * 0.05, 0.5, 0.27 + (t.s - 1.5) * 0.06));
+          }
+          im.setMatrixAt(i, m);
+          t.refs.push([im, i]);
+        });
+        add(im, 'tree', list);
+      }
     }
+    if (c.bushes.length) {
+      const im = new THREE.InstancedMesh(GEO.bush, MATS.bush, c.bushes.length);
+      const berries = c.bushes.filter((b) => b.berry);
+      const bm = berries.length ? new THREE.InstancedMesh(GEO.berries, MATS.berries, berries.length) : null;
+      c.bushes.forEach((b, i) => {
+        q.setFromAxisAngle(up, b.rot);
+        m.compose(p.set(b.x, b.y + b.s * 0.35, b.z), q, s.set(b.s, b.s * 0.85, b.s));
+        im.setMatrixAt(i, m);
+        im.setColorAt(i, col.setHSL(0.26 + (b.rot % 1) * 0.06, 0.45, 0.26 + b.s * 0.05));
+        b.refs.push([im, i]);
+        if (b.berry) {
+          const k = berries.indexOf(b);
+          const pickedDay = this.picked.get(b.id);
+          b.ripe = pickedDay === undefined || this.day - pickedDay > 1.5;
+          bm.setMatrixAt(k, b.ripe ? m : ZERO);
+          bm.setColorAt(k, col.setHex(b.blue ? 0x3a3a9a : 0xc8202a));
+          b.berryRef = [bm, k];
+          b.refs.push([bm, k]);
+        }
+      });
+      add(im, 'bush', c.bushes);
+      if (bm) add(bm, 'bush', berries);
+    }
+    if (c.rocks.length) {
+      const im = new THREE.InstancedMesh(GEO.rock, MATS.rock, c.rocks.length);
+      c.rocks.forEach((r, i) => {
+        q.setFromAxisAngle(up, r.rot);
+        m.compose(p.set(r.x, r.y - r.s * 0.1, r.z), q, s.set(r.s, r.s, r.s * 0.8));
+        im.setMatrixAt(i, m);
+        im.setColorAt(i, col.setHSL(0.08, 0.04, 0.42 + (r.rot % 1) * 0.12));
+      });
+      im.computeBoundingSphere();
+      this.scene.add(im);
+      c.treeMeshes.push(im);
+      im.userData.kind = 'rock';
+    }
+  }
+
+  // Pick a bush's berries. Returns how many were gathered.
+  pickBerries(b) {
+    if (!b.berry || !b.ripe) return 0;
+    b.ripe = false;
+    this.picked.set(b.id, this.day);
+    const [mesh, i] = b.berryRef;
+    mesh.setMatrixAt(i, ZERO);
+    mesh.instanceMatrix.needsUpdate = true;
+    return 3 + Math.floor(b.s * 2);
+  }
+
+  setGrass(c, on) {
+    for (const g of c.grassMeshes) { this.scene.remove(g); g.dispose(); }
+    c.grassMeshes = [];
+    if (on) { c.grassMeshes = buildGrass(this, c); for (const g of c.grassMeshes) this.scene.add(g); }
   }
 
   removeTree(t) {
@@ -357,6 +454,7 @@ export class World {
       this.scene.add(c.mesh);
     }
     if (!c.meshed) { c.meshed = true; this.buildTrees(c); }
+    if (c.grassMeshes.length || c.wantGrass) this.setGrass(c, true);
   }
 
   neighborsReady(cx, cz) {
@@ -369,6 +467,7 @@ export class World {
   unload(c) {
     if (c.mesh) { this.scene.remove(c.mesh); c.mesh.geometry.dispose(); }
     for (const m of c.treeMeshes) { this.scene.remove(m); m.dispose(); }
+    for (const g of c.grassMeshes) { this.scene.remove(g); g.dispose(); }
     this.chunks.delete(ckey(c.cx, c.cz));
   }
 
@@ -384,6 +483,14 @@ export class World {
       const c = this.chunks.get(ckey(cx, cz));
       if (!c) { this.generate(cx, cz); continue; }
       if (Math.max(Math.abs(dx), Math.abs(dz)) <= R && c.dirty && this.neighborsReady(cx, cz)) this.buildMesh(c);
+    }
+    // Grass only near the player; build at most one patch per frame.
+    let built = 0;
+    for (const c of this.chunks.values()) {
+      const near = Math.max(Math.abs(c.cx - pcx), Math.abs(c.cz - pcz)) <= 2;
+      c.wantGrass = near;
+      if (near && c.mesh && !c.grassMeshes.length && !c.noGrass && built < 1) { this.setGrass(c, true); built++; if (!c.grassMeshes.length) c.noGrass = true; }
+      else if (!near && c.grassMeshes.length) this.setGrass(c, false);
     }
   }
 

@@ -4,6 +4,8 @@ import { buildHorse } from './travelers.js';
 import { makeRng } from './noise.js';
 
 const SADDLE = new THREE.MeshLambertMaterial({ color: 0x5a3a22, flatShading: true });
+const BAG = new THREE.MeshLambertMaterial({ color: 0x6a4a2a, flatShading: true });
+const BUCKLE = new THREE.MeshLambertMaterial({ color: 0xb8954a });
 const BOX = new THREE.BoxGeometry(1, 1, 1);
 const angDiff = (a, b) => Math.atan2(Math.sin(b - a), Math.cos(b - a));
 
@@ -24,6 +26,8 @@ class Horse {
     this.speed = 0;
     this.phase = Math.random() * 10;
     this.goal = null;          // where it is walking to (whistle)
+    this.bags = null;          // saddlebag contents, once fitted
+    this.rentUntil = null;     // rented horses go back to the stable
     this.wanderT = Math.random() * 5;
   }
 }
@@ -37,13 +41,14 @@ export class Horses {
 
   owned() { return this.list.find((h) => h.owned) || null; }
 
-  add(x, y, z, owned, seed = (Math.random() * 1e9) | 0, heading = 0) {
+  add(x, y, z, owned, seed = (Math.random() * 1e9) | 0, heading = 0, bags = null) {
     if (owned) for (const h of this.list) h.owned = false;
     const h = new Horse(seed, owned);
     h.pos.set(x, y, z);
     h.heading = heading;
     this.scene.add(h.root);
     this.list.push(h);
+    if (bags) this.fitBags(h, bags);
     return h;
   }
 
@@ -53,6 +58,22 @@ export class Horses {
   }
 
   roots() { return this.list.map((h) => h.root); }
+
+  // Hang a pair of leather bags behind the saddle.
+  fitBags(h, contents = {}) {
+    h.bags = contents;
+    if (h.bagMesh) return;
+    const g = new THREE.Group();
+    for (const s of [-1, 1]) {
+      const m = new THREE.Mesh(BOX, BAG);
+      m.position.set(s * 0.36, 1.32, -0.45); m.scale.set(0.16, 0.42, 0.5);
+      const b = new THREE.Mesh(BOX, BUCKLE);
+      b.position.set(s * 0.45, 1.38, -0.45); b.scale.set(0.02, 0.08, 0.1);
+      g.add(m, b);
+    }
+    h.model.group.add(g);
+    h.bagMesh = g;
+  }
 
   nearest(pos, r) {
     let best = null, bd = r;
@@ -126,6 +147,6 @@ export class Horses {
 
   serialize() {
     const h = this.owned();
-    return h ? { x: h.pos.x, y: h.pos.y, z: h.pos.z, seed: h.seed, heading: h.heading } : null;
+    return h ? { x: h.pos.x, y: h.pos.y, z: h.pos.z, seed: h.seed, heading: h.heading, bags: h.bags, rentUntil: h.rentUntil } : null;
   }
 }
