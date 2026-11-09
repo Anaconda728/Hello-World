@@ -1,0 +1,95 @@
+{
+  "name": "driftland",
+  "productName": "Driftland",
+  "version": "1.0.0",
+  "description": "A first-person sandbox of rolling hills you can dig, shape and build on.",
+  "main": "electron/main.cjs",
+  "private": true,
+  "scripts": {
+    "serve": "node scripts/serve.mjs",
+    "build:web": "node scripts/build.mjs",
+    "start": "npm run build:web && electron .",
+    "dist": "npm run build:web && electron-builder --publish never",
+    "dist:win": "npm run build:web && electron-builder --win --publish never",
+    "dist:mac": "npm run build:web && electron-builder --mac --publish never",
+    "dist:linux": "npm run build:web && electron-builder --linux --publish never"
+  },
+  "devDependencies": {
+    "electron": "33.2.1",
+    "electron-builder": "25.1.8",
+    "esbuild": "0.24.2",
+    "three": "0.160.0"
+  },
+  "build": {
+    "appId": "io.github.anaconda728.driftland",
+    "productName": "Driftland",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/Driftland.html",
+      "electron/**"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "Driftland-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "Driftland-Portable-${version}.${ext}"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "category": "public.app-category.games"
+    },
+    "dmg": {
+      "artifactName": "Driftland-${version}-${arch}.${ext}"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "tar.gz"
+      ],
+      "icon": "build/icon.png",
+      "category": "Game"
+    },
+    "appImage": {
+      "artifactName": "Driftland-${version}.${ext}"
+    }
+  },
+  "author": "Driftland contributors"
+}

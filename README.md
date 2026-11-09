@@ -2,16 +2,48 @@
 
 A first-person sandbox in the browser. The land is made of smooth rolling hills instead of blocks. You dig into it and build onto it like clay.
 
-## Play
+## Download & play
 
-The game is plain HTML and JavaScript, with [three.js](https://threejs.org) loaded from a CDN. You don't need to build anything, but you do need to serve the folder over HTTP:
+There are three ways to play.
+
+| Version | How |
+| --- | --- |
+| **Offline single file** | Download `Driftland.html` and double-click it. It runs in any modern browser (Chrome, Edge, Firefox, Safari) with no internet and no install. Everything, three.js included, is inside that one file. |
+| **Windows** | `Driftland-Setup-x.y.z.exe` (installer) or `Driftland-Portable-x.y.z.exe` (runs without installing). |
+| **macOS** | `Driftland-x.y.z-arm64.dmg` (Apple Silicon) or `-x64.dmg` (Intel). |
+| **Linux** | `Driftland-x.y.z.AppImage` (`chmod +x` then run) or the `.tar.gz`. |
+
+The downloads appear on the repository's **Releases** page once a version tag is pushed (see *Making a release* below).
+
+The desktop apps open in their own window. Press **F11** for fullscreen and **Esc** to pause. Saves are kept automatically: in the app's own data folder for the desktop apps, and in the browser for the single file.
+
+> The desktop builds are **not code-signed**. On Windows, click *More info → Run anyway* if SmartScreen warns. On macOS, right-click the app and choose *Open* the first time.
+
+## Building it yourself
+
+You need Node.js 20 or newer.
 
 ```sh
-python3 -m http.server 8000
-# then open http://localhost:8000
+npm install            # tools: esbuild, Electron, electron-builder, three.js
+npm run serve          # dev server: open http://localhost:8000 (uses the source files directly)
+npm run build:web      # -> dist/Driftland.html (the offline single file)
+npm start              # build and run the desktop app
+npm run dist           # build installers for the current OS into release/
 ```
 
-You can also turn on **GitHub Pages** for this repository (Settings → Pages → deploy from branch).
+`npm run dist:win`, `dist:mac` and `dist:linux` target a specific OS. macOS builds must be made on a Mac, and Windows installers are easiest to build on Windows. The GitHub workflow below does both for you.
+
+### Making a release
+
+`.github/workflows/build.yml` builds the single file and the Windows, macOS and Linux apps on GitHub's machines.
+
+- Push a version tag to publish a GitHub Release with all the downloads attached:
+  ```sh
+  git tag v1.0.0 && git push origin v1.0.0
+  ```
+- Or run it by hand from the **Actions** tab (*Build downloads → Run workflow*), or open a pull request. The files then appear as downloadable artifacts on the run.
+
+Bump `version` in `package.json` for each new release.
 
 ## Controls
 
@@ -141,4 +173,7 @@ You can also turn on **GitHub Pages** for this repository (Settings → Pages �
 | `js/bandits.js` | Bandit camps, ambushes and combat |
 | `js/minimap.js` | Terrain tile cache and map rendering |
 | `js/vegetation.js` | Tree, bush, berry and rock models; grass and flowers with wind |
+| `scripts/build.mjs` | Bundles everything into the offline `dist/Driftland.html` |
+| `electron/main.cjs` | Desktop app window |
+| `build/icon.svg`, `build/icon.png` | App icon |
 | `js/main.js` | Rendering, sky, input, HUD, saving |
