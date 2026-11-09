@@ -7,6 +7,8 @@ import { Hazards } from './hazards.js';
 import { ITEMS, RECIPES, Pickups } from './items.js';
 import { Structures } from './structures.js';
 import { Rifle } from './gun.js';
+import { Towns } from './towns.js';
+import { NPCs, JOB_TITLES } from './npcs.js';
 
 // Hotbar: building materials, then the rifle and placeable stations.
 const HOTBAR = [
@@ -90,8 +92,22 @@ scene.add(clouds);
 // ---------- world & player ----------
 const world = new World(scene, seed, save, RENDER_RADIUS);
 const player = new Player(world);
+const npcs = new NPCs(scene, world);
+const towns = new Towns(scene, world, npcs, save?.townRep);
+world.colliderProvider = towns;
 
 function findSpawn() {
+  // New worlds start on the outskirts of the nearest town.
+  const nt = towns.nearest(0, 0);
+  if (nt) {
+    const t = nt.town;
+    for (let a = 0; a < 8; a++) {
+      const ang = (a / 8) * Math.PI * 2, d = t.R + 8;
+      const x = t.x + Math.cos(ang) * d, z = t.z + Math.sin(ang) * d;
+      const h = world.heightAt(x, z);
+      if (h > WATER + 1.5) return new THREE.Vector3(x, h + 0.6, z);
+    }
+  }
   for (let r = 0; r < 3000; r += 6) {
     for (let a = 0; a < 12; a++) {
       const x = Math.cos((a / 12) * Math.PI * 2) * r, z = Math.sin((a / 12) * Math.PI * 2) * r;
@@ -123,8 +139,17 @@ const inv = new Array(MAT_INFO.length).fill(0);
 const items = Object.fromEntries(Object.keys(ITEMS).map((k) => [k, save?.items?.[k] || 0]));
 let aiming = false;
 
+let bounty = save?.bounty || null;
 creatures.onDeath = (c) => {
   for (const [id, n] of c.def.drops || []) for (let k = 0; k < n; k++) pickups.spawn(id, 1, c.pos);
+  if (bounty && bounty.type === c.type && bounty.have < bounty.need && c.pos.distanceTo(player.pos) < 60) {
+    bounty.have++;
+    toast(bounty.have >= bounty.need ? 'Bounty complete. Return to a guard for your reward.' : `Bounty: ${bounty.have} / ${bounty.need} ${c.def.name.toLowerCase()}s`);
+  }
+};
+npcs.onDeath = (n) => {
+  pickups.spawn('coin', n.job === 'guard' ? 6 + Math.floor(Math.random() * 6) : 2 + Math.floor(Math.random() * 6), n.pos);
+  if (n.job === 'guard' && Math.random() < 0.6) pickups.spawn('ammo', 2, n.pos);
 };
 let creative = !!save?.creative;
 let time = save?.time ?? 0.3;      // in days; 0.25 = sunrise
@@ -133,14 +158,15 @@ let brush = 2;
 let locked = false;
 let digging = false, building = false, cooldown = 0;
 let dead = false, sinceHurt = 99, regenT = 0, starveT = 0;
-let craftOpen = false;
+let craftOpen = false, talkOpen = false, talkNpc = null;
 
 // ---------- HUD ----------
 const $ = (id) => document.getElementById(id);
 const hotbarEl = $('hotbar'), infoEl = $('info'), brushEl = $('brush'), toastEl = $('toast');
 const menu = $('menu'), playBtn = $('play'), loadingEl = $('loading');
 const hpFill = $('hpfill'), hpText = $('hptext'), hurtEl = $('hurt'), deathEl = $('death');
-const foodFill = $('foodfill'), foodText = $('foodtext'), craftEl = $('craft');
+const foodFill = $('foodfill'), foodText = $('foodtext'), craftEl = $('craft'), talkEl = $('talk');
+const wantedEl = $('wanted'), townHud = $('townhud');
 const hex = (c) => '#' + c.toString(16).padStart(6, '0');
 const slotInfo = (s) => (s.m !== undefined ? MAT_INFO[s.m] : ITEMS[s.i]);
 const slots = HOTBAR.map((s, i) => {
@@ -194,7 +220,7 @@ function updateFood() {
 updateFood();
 
 function eat() {
-  const id = items.cooked > 0 ? 'cooked' : items.meat > 0 ? 'meat' : null;
+  const id = items.stew > 0 ? 'stew' : items.cooked > 0 ? 'cooked' : items.meat > 0 ? 'meat' : null;
   if (!id) { toast('Nothing to eat. Hunt animals for meat.'); return; }
   if (hunger >= MAX_HUNGER - 0.5) { toast("You're not hungry"); return; }
   items[id]--;
@@ -269,6 +295,137 @@ function closeCraft() {
   if (r && r.catch) r.catch(() => menu.classList.remove('hidden'));
 }
 $('craftclose').addEventListener('click', closeCraft);
+
+// ---------- talking, trading & bounties ----------
+const SHOPS = {
+  merchant: { sells: [['cooked', 4], ['meat', 2], ['bandage', 8], ['campfire', 12]], buys: [['hide', 3], ['feather', 1], ['meat', 1]] },
+  smith: { sells: [['ingot', 9], ['powder', 3], ['ammo', 3], ['rifle', 150]], buys: [['ingot', 5], ['powder', 2], ['hide', 2]] },
+  keeper: { sells: [['stew', 6], ['cooked', 3]], buys: [['meat', 2], ['cooked', 2]] },
+};
+const BOUNTIES = [
+  { type: 'jackal', need: 3, reward: 30, text: 'Jackals have been taking our chickens at night. Kill three of them.' },
+  { type: 'badger', need: 1, reward: 25, text: "There's a honey badger tearing up the fields. Put it down." },
+  { type: 'viper', need: 2, reward: 20, text: 'Vipers have been biting farmhands in the long grass. Get rid of two.' },
+];
+const DIRS = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
+const dirName = (dx, dz) => DIRS[((Math.round(Math.atan2(dx, -dz) / (Math.PI / 4)) % 8) + 8) % 8];
+const standing = (rep) => (rep > 20 ? 'Friendly' : rep > -20 ? 'Neutral' : rep > -50 ? 'Wary' : 'Hostile');
+const priceMul = (rep) => (rep < -20 ? 1.5 : rep > 20 ? 0.85 : 1);
+
+function rumor(n) {
+  const t = n.town, pool = [
+    'Iron shows rusty orange where the hills are cut open. Dig into a cliff face and you will find it.',
+    'Sulfur sits deep down. Yellow stuff, smells awful. You need it for gunpowder.',
+    "Jackals won't come near a fire. Keep one burning if you camp out.",
+    'Careful digging under overhangs. My cousin was nearly buried that way.',
+    'Honey badgers fear nothing, not even gunshots.',
+    'If a viper rears up in the grass, back away slowly.',
+    'There is good clay by the lakes, if you are thinking of building a forge.',
+  ];
+  const [cx, cz] = world.towns.cellOf(t.x, t.z);
+  let other = null, od = Infinity;
+  for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) {
+    const o = world.towns.get(cx + dx, cz + dz);
+    if (o && o !== t) { const d = Math.hypot(o.x - t.x, o.z - t.z); if (d < od) { od = d; other = o; } }
+  }
+  if (other) pool.push(`${other.name} lies about ${Math.round(od / 10) * 10} paces ${dirName(other.x - t.x, other.z - t.z)} of here.`);
+  if (n.job === 'smith') pool.push('Bring me iron ingots and I will pay fair. Or buy a rifle, if you have the coin.');
+  if (n.job === 'keeper') pool.push('My stew will keep you going all day. Six coins a bowl.');
+  if (n.job === 'guard') pool.push(`Keep the peace in ${t.name} and we will get along fine.`);
+  if (t.rep < -20) pool.push('People are talking about you, you know. Nothing good.');
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+function openTalk(n) {
+  talkNpc = n;
+  talkOpen = true;
+  npcs.startTalk(n);
+  renderTalk('main');
+  document.exitPointerLock();
+}
+function closeTalk(relock = true) {
+  if (talkNpc) npcs.endTalk(talkNpc);
+  talkNpc = null;
+  talkOpen = false;
+  talkEl.classList.add('hidden');
+  if (relock) {
+    const r = canvas.requestPointerLock();
+    if (r && r.catch) r.catch(() => menu.classList.remove('hidden'));
+  } else menu.classList.remove('hidden');
+}
+function renderTalk(view, text) {
+  const n = talkNpc;
+  if (!n) return;
+  const t = n.town;
+  $('talkname').textContent = n.name;
+  $('talkjob').textContent = `${JOB_TITLES[n.job]} of ${t.name}  ·  Town standing: ${standing(t.rep)}  ·  ${items.coin} coins`;
+  const opts = $('talkopts'), shop = $('talkshop');
+  opts.innerHTML = ''; shop.innerHTML = '';
+  const btn = (label, fn, disabled = false) => {
+    const b = document.createElement('button');
+    b.className = 'secondary'; b.textContent = label; b.disabled = disabled;
+    b.addEventListener('click', fn);
+    opts.appendChild(b);
+  };
+  let say = text;
+  if (view === 'main' && !say) say = `"${npcs.greeting(n, (time % 1) * 24)}"`;
+  if (view === 'chat') say = `"${rumor(n)}"`;
+  if (view === 'trade') {
+    const sh = SHOPS[n.job], mul = priceMul(t.rep);
+    if (t.rep < -50) say = '"I won\'t trade with the likes of you."';
+    else {
+      say = say || (mul > 1 ? '"Prices are higher for you. You know why."' : '"Take a look. Fair prices, all of them."');
+      const col = (title, list, buying) => {
+        const div = document.createElement('div');
+        div.className = 'shopcol';
+        div.innerHTML = `<h3>${title}</h3>`;
+        for (const [id, base] of list) {
+          const price = buying ? Math.max(1, Math.round(base * (mul > 1 ? 0.7 : 1))) : Math.ceil(base * mul);
+          const row = document.createElement('div');
+          row.className = 'shoprow';
+          const have = items[id];
+          row.innerHTML = `<span class="swatch" style="background:${hex(ITEMS[id].color)}"></span><span class="nm">${ITEMS[id].name} <small>(have ${have})</small></span><span class="pr">${price} c</span>`;
+          const b = document.createElement('button');
+          b.textContent = buying ? 'Sell' : 'Buy';
+          b.disabled = buying ? have <= 0 : items.coin < price;
+          b.addEventListener('click', () => {
+            if (buying) { items[id]--; items.coin += price; } else { items.coin -= price; items[id]++; }
+            updateHotbar(); renderTalk('trade', buying ? '"Pleasure doing business."' : '"Enjoy."');
+          });
+          row.appendChild(b);
+          div.appendChild(row);
+        }
+        shop.appendChild(div);
+      };
+      col('For sale', sh.sells, false);
+      col('Will buy', sh.buys, true);
+    }
+  }
+  if (view === 'bounty') {
+    if (bounty && bounty.have >= bounty.need) {
+      items.coin += bounty.reward;
+      t.rep += 10;
+      say = `"Good work. Here's your ${bounty.reward} coins."`;
+      bounty = null;
+      updateHotbar();
+    } else if (bounty) {
+      say = `"Still waiting on those ${bounty.type}s: ${bounty.have} of ${bounty.need} so far."`;
+    } else {
+      const b = BOUNTIES[Math.floor(Math.random() * BOUNTIES.length)];
+      say = `"${b.text} ${b.reward} coins when it's done."`;
+      btn('Accept the job', () => {
+        bounty = { type: b.type, need: b.need, have: 0, reward: b.reward };
+        renderTalk('main', '"Good luck out there."');
+      });
+    }
+  }
+  $('talktext').textContent = say;
+  btn('Chat', () => renderTalk('chat'));
+  if (SHOPS[n.job]) btn('Trade', () => renderTalk('trade'));
+  if (n.job === 'guard') btn(bounty ? (bounty.have >= bounty.need ? 'Claim bounty' : 'About that job…') : 'Any work?', () => renderTalk('bounty'));
+  btn('Goodbye', () => closeTalk());
+}
+$('talkclose').addEventListener('click', () => closeTalk());
 $('eatbtn').addEventListener('click', eat);
 $('bandbtn').addEventListener('click', useBandage);
 
@@ -297,6 +454,8 @@ function damage(amount, cause, from) {
 }
 function respawn() {
   dead = false;
+  npcs.clearWanted();
+  items.coin = Math.floor(items.coin / 2);
   player.health = player.maxHealth;
   hunger = Math.max(hunger, 12);
   updateFood();
@@ -313,7 +472,7 @@ function saveGame() {
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify({
       v: 1, seed, ops: world.ops, removedTrees: [...world.removedTrees], inv, items, creative, time, health: player.health, hunger,
-      structures: structures.serialize(),
+      structures: structures.serialize(), townRep: towns.serializeRep(), bounty,
       player: { x: player.pos.x, y: player.pos.y, z: player.pos.z, yaw: player.yaw, pitch: player.pitch },
     }));
   } catch {
@@ -326,6 +485,11 @@ addEventListener('beforeunload', saveGame);
 // ---------- input ----------
 const keys = new Set();
 addEventListener('keydown', (e) => {
+  if (talkOpen && !locked) {
+    if (e.code === 'KeyT') closeTalk();
+    else if (e.code === 'Escape') closeTalk(false);
+    return;
+  }
   if (craftOpen && !locked) {
     if (e.code === 'Tab' || e.code === 'Escape') { e.preventDefault(); if (e.code === 'Tab') closeCraft(); else { craftOpen = false; craftEl.classList.add('hidden'); menu.classList.remove('hidden'); } }
     else if (e.code === 'KeyR') eat();
@@ -337,6 +501,13 @@ addEventListener('keydown', (e) => {
   if (e.code === 'Tab') { e.preventDefault(); openCraft(); return; }
   if (e.code === 'KeyR') eat();
   if (e.code === 'KeyH') useBandage();
+  if (e.code === 'KeyT') {
+    if (target && target.npc) {
+      const n = target.npc;
+      if (npcs.canTalk(n)) openTalk(n);
+      else if (n.job !== 'guard' && npcs.law.wanted > 0) npcs.say(n, 'Get away from me!');
+    } else toast('Look at someone nearby and press T to talk');
+  }
   if (e.code.startsWith('Digit')) {
     const n = +e.code.slice(5) - 1;
     if (n >= 0 && n < HOTBAR.length) { sel = n; updateHotbar(); }
@@ -370,9 +541,13 @@ $('newworld').addEventListener('click', () => {
 });
 document.addEventListener('pointerlockchange', () => {
   locked = document.pointerLockElement === canvas;
-  menu.classList.toggle('hidden', locked || craftOpen);
+  menu.classList.toggle('hidden', locked || craftOpen || talkOpen);
   craftEl.classList.toggle('hidden', locked || !craftOpen);
-  if (locked) craftOpen = false;
+  talkEl.classList.toggle('hidden', locked || !talkOpen);
+  if (locked) {
+    craftOpen = false;
+    if (talkOpen) { talkOpen = false; if (talkNpc) npcs.endTalk(talkNpc); talkNpc = null; }
+  }
   if (!locked) {
     keys.clear(); digging = building = aiming = false;
     if (!dead) playBtn.textContent = 'Resume';
@@ -429,7 +604,7 @@ function updateTarget() {
     if (c.mesh) objs.push(c.mesh);
     objs.push(...c.treeMeshes);
   }
-  objs.push(...creatures.roots(), ...structures.roots());
+  objs.push(...creatures.roots(), ...structures.roots(), ...npcs.roots(), ...towns.meshes());
   camera.getWorldDirection(dir);
   raycaster.set(camera.position, dir);
   const hit = raycaster.intersectObjects(objs, true)[0];
@@ -437,7 +612,12 @@ function updateTarget() {
   highlight.visible = false;
   if (!hit) return;
   let o = hit.object;
-  while (o && !o.userData.creature && !o.userData.structure) o = o.parent;
+  while (o && !o.userData.creature && !o.userData.structure && !o.userData.npc && o.userData.kind !== 'town') o = o.parent;
+  if (o && o.userData.kind === 'town') return;
+  if (o && o.userData.npc) {
+    if (hit.distance < 4) target = { npc: o.userData.npc, point: hit.point };
+    return;
+  }
   if (o) {
     if (o.userData.creature && hit.distance < 3.6) target = { creature: o.userData.creature, point: hit.point };
     if (o.userData.structure && hit.distance < 4.5) target = { structure: o.userData.structure, point: hit.point };
@@ -468,6 +648,12 @@ function doDig() {
     camera.getWorldDirection(dir);
     creatures.hit(target.creature, 4, dir, ctx);
     cooldown = 0.4;
+    return;
+  }
+  if (target.npc) {
+    camera.getWorldDirection(dir);
+    npcs.hit(target.npc, 4, dir, ctx);
+    cooldown = 0.45;
     return;
   }
   if (target.structure) {
@@ -502,7 +688,7 @@ function shoot() {
   if (rifle.reload > 0) return;
   if (!creative && items.ammo <= 0) { toast('Out of cartridges'); cooldown = 0.6; return; }
   if (!creative) items.ammo--;
-  const objs = [...creatures.roots(), ...structures.roots()];
+  const objs = [...creatures.roots(), ...structures.roots(), ...npcs.roots(), ...towns.meshes()];
   const pcx = Math.floor(player.pos.x / CS), pcz = Math.floor(player.pos.z / CS);
   for (let dx = -3; dx <= 3; dx++) for (let dz = -3; dz <= 3; dz++) {
     const c = world.getChunk(pcx + dx, pcz + dz);
@@ -521,13 +707,16 @@ function shoot() {
   rifle.shoot(end);
   rifle.reload = RELOAD_TIME;
   player.pitch = Math.min(1.55, player.pitch + (aiming ? 0.02 : 0.04));
+  let hitHostile = false, hitNpc = false;
   if (hit) {
     let o = hit.object;
-    while (o && !o.userData.creature) o = o.parent;
-    if (o) creatures.hit(o.userData.creature, RIFLE_DAMAGE, dir, ctx);
+    while (o && !o.userData.creature && !o.userData.npc) o = o.parent;
+    if (o && o.userData.creature) { creatures.hit(o.userData.creature, RIFLE_DAMAGE, dir, ctx); hitHostile = !!o.userData.creature.def.hostile; }
+    else if (o && o.userData.npc) { npcs.hit(o.userData.npc, RIFLE_DAMAGE, dir, ctx); hitNpc = true; }
     else hazards.puff(hit.point, 0.25);
   }
   creatures.scare(player.pos, 45);
+  npcs.onGunshot(player.pos, !hitHostile && !hitNpc, ctx);
   updateHotbar();
 }
 
@@ -545,7 +734,7 @@ function placeStructure(type) {
 }
 
 function doBuild() {
-  if (!target || target.tree || target.creature || target.structure) return;
+  if (!target || target.tree || target.creature || target.structure || target.npc) return;
   const s = selected();
   if (s.i) { if (s.i !== 'rifle') placeStructure(s.i); return; }
   const mat = s.m;
@@ -626,7 +815,20 @@ const ctx = {
   player, keys, creatures, toast, damage,
   get night() { return sunDir.y < -0.05; },
   fireNear: (pos, r) => structures.near(['campfire', 'forge'], pos, r),
+  get hour() { return (time % 1) * 24; },
+  aiming: false,
+  gunFx,
 };
+const fxLines = [];
+function gunFx(from, to) {
+  const g = new THREE.BufferGeometry().setFromPoints([from.clone(), to.clone()]);
+  const l = new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0xffe9a8, transparent: true, opacity: 0.85 }));
+  l.frustumCulled = false;
+  scene.add(l);
+  fxLines.push({ l, t: 0.09 });
+  hazards.puff(from, 0.18);
+  rifle.playShot(Math.max(0.04, 0.6 * (1 - from.distanceTo(player.pos) / 90)));
+}
 function giveItem(id, n) {
   items[id] += n;
   toast(`+${n} ${ITEMS[id].name}`);
@@ -655,6 +857,7 @@ function frame(now) {
     if (player.fallImpact > 14) damage(Math.round((player.fallImpact - 14) * 1.4), 'Fell from a great height');
     player.fallImpact = 0;
     creatures.update(dt, ctx);
+    npcs.update(dt, ctx);
     hazards.update(dt, ctx);
     pickups.update(dt, player.pos, giveItem);
     sinceHurt += dt;
@@ -695,10 +898,26 @@ function frame(now) {
   const fov = aiming && rifleOut ? 32 : 72;
   if (Math.abs(camera.fov - fov) > 0.1) { camera.fov += (fov - camera.fov) * Math.min(1, dt * 12); camera.updateProjectionMatrix(); }
   structures.update(dt, player.pos, sunDir.y < -0.05);
+  towns.update(player.pos, 1 - smooth(-0.15, 0.1, sunDir.y), dt, (time % 1) * 24);
+  for (const f of fxLines.slice()) {
+    f.t -= dt;
+    if (f.t <= 0) { scene.remove(f.l); f.l.geometry.dispose(); f.l.material.dispose(); fxLines.splice(fxLines.indexOf(f), 1); }
+  }
+  ctx.aiming = aiming && rifleOut;
 
   if (locked && ready) {
     updateTarget();
     if (selected().i) highlight.visible = false;
+    if (ctx.aiming) {
+      camera.getWorldDirection(dir);
+      raycaster.far = 35;
+      raycaster.set(camera.position, dir);
+      const h = raycaster.intersectObjects([...npcs.roots(), ...towns.meshes()], true)[0];
+      raycaster.far = REACH;
+      let o = h && h.object;
+      while (o && !o.userData.npc) o = o.parent;
+      if (o) npcs.aimedAt(o.userData.npc, dt, ctx);
+    }
     cooldown -= dt;
     if (cooldown <= 0 && (digging || building)) {
       cooldown = 0.25;
@@ -718,11 +937,19 @@ function frame(now) {
     hudTimer = 0.2;
     const f = time % 1, hrs = Math.floor(f * 24), mins = Math.floor((f * 24 - hrs) * 60);
     const p = player.pos;
-    infoEl.textContent = `Day ${Math.floor(time) + 1}  ${pad2(hrs)}:${pad2(mins)}  ·  ${p.x.toFixed(0)}, ${p.y.toFixed(0)}, ${p.z.toFixed(0)}  ·  ${creative ? (player.flying ? 'Creative (flying)' : 'Creative') : 'Survival'}`;
+    infoEl.textContent = `Day ${Math.floor(time) + 1}  ${pad2(hrs)}:${pad2(mins)}  ·  ${p.x.toFixed(0)}, ${p.y.toFixed(0)}, ${p.z.toFixed(0)}  ·  ${items.coin} coins  ·  ${creative ? (player.flying ? 'Creative (flying)' : 'Creative') : 'Survival'}`;
+    const w = npcs.law.wanted;
+    wantedEl.innerHTML = w ? '★'.repeat(w) + '<span class="off">' + '★'.repeat(5 - w) + '</span>' : '';
+    wantedEl.classList.toggle('seen', npcs.law.seen);
+    const nt = towns.nearest(p.x, p.z);
+    if (!nt) townHud.textContent = '';
+    else if (nt.dist < nt.town.R + 8) townHud.textContent = `${nt.town.name}`;
+    else townHud.textContent = `${nt.town.name}  ·  ${Math.round(nt.dist)} m ${dirName(nt.town.x - p.x, nt.town.z - p.z)}`;
   }
 }
 requestAnimationFrame(frame);
 
 // Handle for debugging from the console.
-window.driftland = { world, player, inv, items, scene, camera, creatures, hazards, pickups, structures, rifle, ctx,
+window.driftland = { world, player, inv, items, scene, camera, creatures, hazards, pickups, structures, rifle, ctx, npcs, towns,
+  openTalk, renderTalk, get bounty() { return bounty; },
   craft, RECIPES, shoot, eat, openCraft, renderCraft, select: (i) => { sel = i; updateHotbar(); }, get hunger() { return hunger; }, get target() { return target; }, doDig, doBuild, setTime: (t) => { time = t; } };

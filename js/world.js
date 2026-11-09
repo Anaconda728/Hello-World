@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { CS, H, SY, WATER, MAT, MAT_INFO, idx, ckey } from './constants.js';
 import { Noise, makeRng } from './noise.js';
 import { buildChunkGeometry } from './mesher.js';
+import { TownMap } from './towns.js';
 
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
 const round2 = (v) => Math.round(v * 100) / 100;
@@ -17,6 +18,8 @@ export class World {
     this.oreNoise = new Noise(seed ^ 0x27d4eb2f);
     this.oreNoise2 = new Noise(seed ^ 0x165667b1);
     this.chunks = new Map();
+    this.towns = new TownMap(this);
+    this.colliderProvider = null;
     this.ops = save?.ops ? save.ops.slice() : [];
     this.removedTrees = new Set(save?.removedTrees || []);
     this.terrainMat = new THREE.MeshLambertMaterial({ vertexColors: true });
@@ -39,7 +42,9 @@ export class World {
 
   // ---------- generation ----------
 
-  heightAt(x, z) {
+  heightAt(x, z) { return this.towns.adjustHeight(x, z, this.rawHeight(x, z)); }
+
+  rawHeight(x, z) {
     const n = this.noise;
     const base = n.fbm2(x * 0.0045, z * 0.0045, 4);
     const detail = n.fbm2(x * 0.02 + 31.7, z * 0.02 - 12.3, 3);
@@ -73,17 +78,20 @@ export class World {
   fillColumn(dens, mats, base, wx, wz) {
     const h = this.heightAt(wx, wz);
     let top = this.topMat(h, wx, wz);
-    const clayZone = h < WATER + 5 && this.noise.noise2(wx * 0.04 + 77, wz * 0.04 - 33) > -0.1;
+    const townSurf = this.towns.surfaceAt(wx, wz);
+    const inTown = townSurf > 0 || !!this.towns.near(wx, wz, 12);
+    const clayZone = !inTown && h < WATER + 5 && this.noise.noise2(wx * 0.04 + 77, wz * 0.04 - 33) > -0.1;
     if (clayZone && h < WATER + 0.3) top = MAT.CLAY;               // clay lake beds
-    const sub = clayZone && top !== MAT.SNOW ? MAT.CLAY
+    let sub = clayZone && top !== MAT.SNOW ? MAT.CLAY
       : top === MAT.SAND ? MAT.SAND : top === MAT.SNOW ? MAT.STONE : MAT.DIRT;
+    if (townSurf) { top = townSurf === 2 ? MAT.ROAD : MAT.GRASS; sub = MAT.DIRT; }
     const cn = this.caveNoise, on = this.oreNoise, on2 = this.oreNoise2;
     for (let y = 0; y <= H; y++) {
       let d, m;
       if (y <= 1) { d = 6; m = MAT.BEDROCK; }
       else {
         d = h - y;
-        if (d > 3 && y > WATER + 1) {
+        if (d > 3 && y > WATER + 1 && !inTown) {
           const c = cn.noise3(wx * 0.035, y * 0.06, wz * 0.035) + 0.5 * cn.noise3(wx * 0.08 + 50, y * 0.1, wz * 0.08);
           if (c > 0.38) d = Math.min(d, (0.38 - c) * 30);
         }
@@ -256,6 +264,7 @@ export class World {
       if (r3 > p) continue;
       const h = this.heightAt(x, z);
       if (h < WATER + 1.8 || h > 55) continue;
+      if (this.towns.near(x, z, 6)) continue;
       const sx = this.heightAt(x + 1, z) - this.heightAt(x - 1, z);
       const sz = this.heightAt(x, z + 1) - this.heightAt(x, z - 1);
       if (sx * sx + sz * sz > 1.4) continue;

@@ -12,6 +12,8 @@ export const ITEMS = {
   ammo: { name: 'Cartridge', color: 0xd8b25a },
   rifle: { name: 'Rifle', color: 0x6b4a2e },
   bandage: { name: 'Bandage', color: 0xeeeeee },
+  coin: { name: 'Coin', color: 0xe8c547 },
+  stew: { name: 'Hearty stew', color: 0xa0603a, food: 12 },
   campfire: { name: 'Campfire', color: 0xe2783a },
   forge: { name: 'Forge', color: 0x7a7f8c },
 };

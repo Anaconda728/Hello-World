@@ -24,6 +24,7 @@ You can also turn on **GitHub Pages** for this repository (Settings â†’ Pages â†
 | Right click (hold) | Build with the selected material / place a station / aim the rifle |
 | 1â€“9 / mouse wheel | Choose a hotbar slot (materials, rifle, campfire, forge) |
 | Tab | Open crafting |
+| T | Talk to the person you're looking at |
 | R / H | Eat / use a bandage |
 | Q / E | Shrink / grow the brush |
 | C | Switch between survival and creative mode |
@@ -45,6 +46,19 @@ You can also turn on **GitHub Pages** for this repository (Settings â†’ Pages â†
   - *Honey badgers* are rare and tough. They charge if you get close.
   - *Vipers* hide in the grass. Watch for one rearing up just before it strikes.
 - **Unstable cliffs.** Digging into a steep face or under an overhang *sometimes* makes it collapse. The ground rumbles first, then a slab breaks off and tumbles down as boulders. Boulders hurt anything they hit, then settle back into the terrain.
+- **Towns.** Each world region may hold a settlement, built on flattened land with cobbled streets, a market plaza with stalls and a well, timber-framed houses, a tavern, a smithy, a stone guard tower and street lamps. Windows light up at night. The HUD shows the nearest town and its direction, and new worlds start just outside one.
+- **Townsfolk with daily routines.** Merchants, a blacksmith, an innkeeper, labourers, townsfolk and guards. They:
+  - sleep at home at night and step out in the morning;
+  - go to work: selling at stalls, hammering at the anvil, carrying crates house to house, patrolling;
+  - take lunch at the tavern or the plaza and gather there again in the evening;
+  - carry lanterns after dark. Guards work day and night shifts.
+- **They react to the world:**
+  - They greet you as you pass and complain if you barge into them.
+  - Gunfire makes people scream and run, or cower where they are.
+  - Aim your rifle at someone and they put their hands up, then bolt. Aim at a guard and you get a warning first.
+  - Civilians run from jackals and honey badgers. Guards shoot hostile animals that come into town.
+- **Talk (T).** Chat for rumours, such as where to find ore or the direction of the next town. Trade with merchants, the smith and the innkeeper for coins. Guards hand out bounty jobs to cull jackals, badgers or vipers.
+- **The law.** Assault, murder or firing a gun recklessly near a guard gives you a wanted level (1â€“5 stars). Guards then chase you, shoot at you from range and beat you up close. Stay out of their sight for about 20 seconds and you lose a star. Crimes damage a town's standing, which raises prices and eventually ends trade there. Dying clears your wanted level but costs half your coins.
 - **Resources underground.** Coal and iron ore run through the stone, yellow sulfur lies deeper (below about height 26), and blue-grey clay sits around lakes.
 - **Animal drops.** Animals drop meat, hide and feathers, which drift toward you when you get close.
 - **Food and hunger.** Your food bar empties over time, and faster when sprinting or swimming. Eat with R: cooked meat fills 8 and raw meat fills 3. Health only comes back when you're well fed, and at zero food you start starving.
@@ -80,4 +94,6 @@ You can also turn on **GitHub Pages** for this repository (Settings â†’ Pages â†
 | `js/items.js` | Items, crafting recipes, dropped pickups |
 | `js/structures.js` | Campfires and forges |
 | `js/gun.js` | First-person rifle model, effects and sound |
+| `js/towns.js` | Town sites, street layout, building meshes, colliders, road graph |
+| `js/npcs.js` | Townsfolk models, schedules, reactions, guards and the wanted system |
 | `js/main.js` | Rendering, sky, input, HUD, saving |

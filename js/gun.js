@@ -63,7 +63,7 @@ export class Rifle {
     this.playShot();
   }
 
-  playShot() {
+  playShot(volume = 0.7) {
     try {
       const ac = this.ac || (this.ac = new (window.AudioContext || window.webkitAudioContext)());
       const len = Math.floor(ac.sampleRate * 0.6);
@@ -75,7 +75,7 @@ export class Rifle {
       const lp = ac.createBiquadFilter();
       lp.type = 'lowpass'; lp.frequency.value = 1600;
       const g = ac.createGain();
-      g.gain.value = 0.7;
+      g.gain.value = volume;
       src.connect(lp).connect(g).connect(ac.destination);
       src.start();
     } catch { /* audio unavailable */ }

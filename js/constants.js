@@ -5,7 +5,7 @@ export const H = 72;           // world height in grid units
 export const SY = H + 1;       // density samples per column
 export const WATER = 18;       // sea level
 
-export const MAT = { AIR: 0, GRASS: 1, DIRT: 2, STONE: 3, SAND: 4, SNOW: 5, WOOD: 6, BEDROCK: 7, COAL: 8, IRON: 9, SULFUR: 10, CLAY: 11 };
+export const MAT = { AIR: 0, GRASS: 1, DIRT: 2, STONE: 3, SAND: 4, SNOW: 5, WOOD: 6, BEDROCK: 7, COAL: 8, IRON: 9, SULFUR: 10, CLAY: 11, ROAD: 12 };
 
 export const MAT_INFO = [
   null,
@@ -20,6 +20,7 @@ export const MAT_INFO = [
   { name: 'Iron ore', color: 0xb8794a },
   { name: 'Sulfur', color: 0xd9c43c },
   { name: 'Clay', color: 0x9aa0b4 },
+  { name: 'Cobbles', color: 0x8a8275 },
 ];
 
 

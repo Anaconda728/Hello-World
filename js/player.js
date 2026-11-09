@@ -1,6 +1,7 @@
 // First-person movement with collision against the smooth density field.
 import * as THREE from 'three';
 import { WATER } from './constants.js';
+import { pushOut } from './towns.js';
 
 const RADIUS = 0.4;
 const SPHERES = [0.4, 0.9, 1.4];   // collision sphere heights above the feet
@@ -102,6 +103,16 @@ export class Player {
         moved = true;
       }
       if (!moved) break;
+    }
+    // Town buildings: push out sideways, or stand on flat tops.
+    if (w.colliderProvider) {
+      const cols = w.colliderProvider.colliders(p.x, p.z);
+      for (const k of cols) {
+        if (p.x > k.x0 && p.x < k.x1 && p.z > k.z0 && p.z < k.z1 && p.y < k.top && p.y > k.top - 0.45 && v.y <= 0) {
+          p.y = k.top; v.y = 0; this.grounded = true;
+        }
+      }
+      pushOut(p, RADIUS, 1.8, cols);
     }
     // Tree trunks.
     for (const t of w.nearbyTrees(p.x, p.z)) {

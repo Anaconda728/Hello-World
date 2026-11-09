@@ -16,6 +16,8 @@
 
   <div id="hud">
     <div id="info"></div>
+    <div id="townhud"></div>
+    <div id="wanted"></div>
     <div id="crosshair"></div>
     <div id="toast"></div>
     <div id="bottom">
@@ -41,10 +43,11 @@
         <div><b>Left click</b> dig / chop / attack</div><div><b>Right click</b> build</div>
         <div><b>1–9 / wheel</b> hotbar</div><div><b>Q / E</b> brush size</div>
         <div><b>Tab</b> crafting</div><div><b>R</b> eat · <b>H</b> bandage</div>
+        <div><b>T</b> talk to townsfolk</div>
         <div><b>C</b> creative mode</div><div><b>F</b> fly (creative)</div>
         <div><b>Esc</b> pause</div>
       </div>
-      <p class="hint">Dig and chop for materials, hunt for meat and hide, and craft your way to a rifle. Watch your food bar. Cliffs can collapse, jackals hunt at night (they fear campfires), and vipers hide in the grass. Your world saves in this browser.</p>
+      <p class="hint">Visit towns to trade, gossip and take on bounties, but break the law and the guards will come for you. Dig and chop for materials, hunt for meat and hide, and craft your way to a rifle. Watch your food bar. Cliffs can collapse, jackals hunt at night (they fear campfires), and vipers hide in the grass. Your world saves in this browser.</p>
       <button id="newworld" class="secondary">New world</button>
       <p class="hint small">You need a keyboard and mouse to play.</p>
     </div>
@@ -65,6 +68,19 @@
         <button id="bandbtn" class="secondary">Use bandage (H)</button>
       </div>
       <p class="hint">Where to find things: <b>coal</b> and <b>iron ore</b> are in the stone underground, so dig into hillsides and cliffs. <b>Sulfur</b> (yellow) lies deeper, below about height 26. <b>Clay</b> (blue-grey) is under the soil around lakes and on lake beds. <b>Timber</b> comes from trees. <b>Meat</b>, <b>hide</b> and <b>feathers</b> come from animals.</p>
+    </div>
+  </div>
+
+  <div id="talk" class="hidden">
+    <div class="panel wide talkpanel">
+      <div class="craft-head">
+        <h2 id="talkname"></h2>
+        <button id="talkclose" class="secondary">Goodbye (T)</button>
+      </div>
+      <div id="talkjob"></div>
+      <p id="talktext"></p>
+      <div id="talkopts"></div>
+      <div id="talkshop"></div>
     </div>
   </div>
 
