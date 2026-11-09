@@ -16,14 +16,52 @@
     }
   </script>
 </head>
-<body class="mode-build">
+<body class="mode-build title loading">
   <canvas id="c"></canvas>
+  <div id="scanlines"></div>
 
   <div id="loading">
     <div class="logo">NEON<span>SPRAWL</span></div>
-    <div class="sub">booting city grid…</div>
+    <div class="sub" id="load-label">booting city OS…</div>
+    <div class="lbar"><i id="load-bar"></i></div>
   </div>
 
+  <!-- ===================== landing page ===================== -->
+  <div id="title">
+    <div class="tl-left">
+      <div class="glitch" data-text="NEON">NEON</div>
+      <div class="glitch mag" data-text="SPRAWL">SPRAWL</div>
+      <div class="tag">CITY-OS v2.7 // build the megacity · then walk its streets</div>
+
+      <div class="panel show" data-panel="main">
+        <button class="big" id="t-continue">▶ Continue <small></small></button>
+        <button class="big" id="t-new">＋ New World</button>
+        <button class="big" id="t-load">⟲ Load World</button>
+        <button class="big" id="t-import">⤒ Import Save File</button>
+        <div class="foot">Cities autosave to this browser. Export a file to back one up or move it to another machine.</div>
+      </div>
+
+      <div class="panel" data-panel="new">
+        <h3>// New World</h3>
+        <label>City name<input id="nw-name" maxlength="32" placeholder="New Sprawl" /></label>
+        <label>World seed
+          <span class="row"><input id="nw-seed" inputmode="numeric" /><button id="nw-reroll" title="Random seed">⟳</button></span>
+        </label>
+        <label class="chk"><input type="checkbox" id="nw-sandbox" /> Sandbox (unlimited credits)</label>
+        <p class="dim">The sprawl is endless. Every direction keeps generating dense city. You start with a cleared district and one fusion core at the centre.</p>
+        <div class="row"><button data-back>← Back</button><button class="primary" id="nw-start">Jack in ▶</button></div>
+      </div>
+
+      <div class="panel" data-panel="load">
+        <h3>// Saved Cities</h3>
+        <div id="slot-list"></div>
+        <div class="row"><button data-back>← Back</button></div>
+      </div>
+    </div>
+    <div class="tl-ticker"><span>◆ ARASAKI-KEMP stock +4.2% ◆ CURFEW IN SECTOR 9 LIFTED ◆ CHROME CLINICS REPORT RECORD AUGMENT SALES ◆ ACID RAIN ADVISORY: CARRY AN UMBRELLA ◆ OMNIDYNE UNVEILS NEURAL+ 7 ◆ UPLINK ARRAYS BACK ONLINE AFTER SOLAR STORM ◆ DRONE TRAFFIC DELAYS ON AVENUE 12 ◆</span></div>
+  </div>
+
+  <!-- ===================== in-game HUD ===================== -->
   <div id="hud">
     <div id="topbar">
       <div class="brand">NEON<span>SPRAWL</span></div>
@@ -31,21 +69,19 @@
         <div class="stat"><label>Credits</label><b id="st-credits">0</b></div>
         <div class="stat"><label>Population</label><b id="st-pop">0</b></div>
         <div class="stat"><label>Jobs</label><b id="st-jobs">0</b></div>
+        <div class="stat"><label>Power</label><b id="st-power">0</b></div>
         <div class="stat"><label>Income</label><b id="st-income">0</b></div>
       </div>
       <div class="modes">
         <button data-mode="build">Build <kbd>B</kbd></button>
         <button data-mode="walk">Walk <kbd>F</kbd></button>
         <button data-mode="drive">Drive <kbd>V</kbd></button>
+        <button id="btn-menu" title="Menu (Esc)">☰</button>
       </div>
     </div>
 
     <div id="side">
       <canvas id="minimap" width="180" height="180"></canvas>
-      <div class="menu build-only">
-        <button id="btn-generate">Generate city</button>
-        <button id="btn-clear">Clear grid</button>
-      </div>
       <div class="toggles">
         <label><input type="checkbox" id="tg-rain" checked /> Rain</label>
         <label><input type="checkbox" id="tg-sound" /> Sound</label>
@@ -59,11 +95,30 @@
     <div id="info" class="build-only"></div>
     <div id="help"></div>
     <div id="toasts"></div>
-    <div id="crosshair" class="walk-only"></div>
+    <div id="crosshair" class="walk-only"><i></i><i></i><i></i><i></i></div>
     <div id="lockmsg" class="walk-only">Click to look around · <kbd>B</kbd> back to builder</div>
+    <div id="scan"></div>
+    <div id="augments" class="walk-only">
+      <div class="ah">CYBERWARE</div>
+      <div class="aug"><span><kbd>Q</kbd> Reflex dash</span><div class="ab"><i id="aug-dash"></i></div></div>
+      <div class="aug"><span><kbd>Space ×2</kbd> Kinetic legs</span><em id="aug-legs">●</em></div>
+      <div class="aug ready"><span><kbd>X</kbd> Optic overlay</span><em>●</em></div>
+    </div>
     <div id="speedo" class="drive-only">
       <b id="speed">0</b><span>km/h</span>
       <div class="bar"><i id="boostbar"></i></div>
+    </div>
+  </div>
+
+  <!-- ===================== pause menu ===================== -->
+  <div id="menu">
+    <div class="box">
+      <h3>// <span id="m-name"></span></h3>
+      <button class="big" id="m-resume">▶ Resume</button>
+      <button class="big" id="m-save">💾 Save</button>
+      <button class="big" id="m-saveas">⧉ Save as new slot</button>
+      <button class="big" id="m-export">⤓ Export save file</button>
+      <button class="big" id="m-quit">⏏ Save &amp; quit to title</button>
     </div>
   </div>
 

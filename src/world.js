@@ -1,6 +1,6 @@
 // Static atmosphere: smog sky, wet ground, distant megacity skyline, rain, searchlights.
 import * as THREE from 'three';
-import { GRID, TILE, HALF } from './config.js';
+import { TILE } from './config.js';
 import { MAT } from './materials.js';
 import { Parts, meshesFromPartMaps } from './geom.js';
 import { mulberry32 } from './rng.js';
@@ -60,18 +60,19 @@ export class World {
   makeGround() {
     const g = new THREE.PlaneGeometry(6000, 6000);
     g.rotateX(-Math.PI / 2);
-    const m = new THREE.Mesh(g, MAT.ground);
-    m.position.y = -0.02;
-    this.scene.add(m);
+    this.ground = new THREE.Mesh(g, MAT.ground);
+    this.ground.position.y = -0.02;
+    this.scene.add(this.ground);
   }
 
   // Ring of dark low-detail towers so the city sits inside an endless sprawl.
+  // It travels with the camera, so the sprawl never ends on the horizon.
   makeSkyline() {
     const r = mulberry32(1337);
     const P = new Parts();
-    for (let k = 0; k < 520; k++) {
+    for (let k = 0; k < 700; k++) {
       const ang = r() * Math.PI * 2;
-      const dist = r.range(HALF + 90, HALF + 900);
+      const dist = r.range(600, 1500);
       const x = Math.cos(ang) * dist, z = Math.sin(ang) * dist;
       const w = r.range(14, 40), d = r.range(14, 40);
       const h = r.range(20, 120) + (r() < 0.15 ? r.range(80, 260) : 0);
@@ -79,7 +80,9 @@ export class World {
       if (r() < 0.25) P.box('neon_' + r.pick(['magenta', 'cyan', 'amber', 'violet']), w + 0.6, 0.6, d + 0.6, x, h, z, ang, false);
       if (r() < 0.3) P.box('blinkA', 1.2, 1.2, 1.2, x, h + 2, z, 0, false);
     }
-    meshesFromPartMaps([P.merge()], MAT).forEach((m) => this.scene.add(m));
+    this.skyline = new THREE.Group();
+    meshesFromPartMaps([P.merge()], MAT).forEach((m) => { m.matrixAutoUpdate = true; this.skyline.add(m); });
+    this.scene.add(this.skyline);
   }
 
   makeRain() {
@@ -123,21 +126,23 @@ export class World {
     const geo = new THREE.ConeGeometry(14, 700, 24, 1, true);
     geo.translate(0, -350, 0);
     geo.rotateX(Math.PI); // apex at origin, cone opens upward
-    const spots = [[-HALF - 260, -HALF + 80], [HALF + 300, -80], [60, HALF + 340], [-120, -HALF - 380]];
+    this.beamRoot = new THREE.Group();
+    this.scene.add(this.beamRoot);
+    const spots = [[-560, -300], [620, -80], [60, 700], [-220, -720], [480, 560]];
     spots.forEach(([x, z], k) => {
       const m = new THREE.Mesh(geo, MAT.beam);
       m.position.set(x, 0, z);
       m.userData.phase = k * 1.7;
-      this.scene.add(m);
+      this.beamRoot.add(m);
       this.beams.push(m);
     });
   }
 
   makeGrid() {
-    const pts = [];
-    for (let k = 0; k <= GRID; k++) {
-      const p = k * TILE - HALF;
-      pts.push(-HALF, 0.08, p, HALF, 0.08, p, p, 0.08, -HALF, p, 0.08, HALF);
+    const pts = [], N = 30, H = N * TILE;
+    for (let k = -N; k <= N; k++) {
+      const p = k * TILE;
+      pts.push(-H, 0.08, p, H, 0.08, p, p, 0.08, -H, p, 0.08, H);
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
@@ -147,9 +152,14 @@ export class World {
     this.scene.add(this.grid);
   }
 
-  update(dt, t, camera) {
+  update(dt, t, camera, focus) {
     this.sky.material.uniforms.uTime.value = t;
     this.sky.position.copy(camera.position);
+    const cx = camera.position.x, cz = camera.position.z;
+    this.skyline.position.set(cx, 0, cz);
+    this.beamRoot.position.set(cx, 0, cz);
+    this.ground.position.set(cx, -0.02, cz);
+    if (focus) this.grid.position.set(Math.round(focus.x / TILE) * TILE, 0, Math.round(focus.z / TILE) * TILE);
     this.rainMat.uniforms.uTime.value = t;
     this.rainMat.uniforms.uCam.value.copy(camera.position);
     for (const b of this.beams) {

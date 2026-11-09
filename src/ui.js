@@ -1,48 +1,127 @@
-// DOM HUD: stats, toolbar, toasts, help text, speedometer, minimap.
-import { GRID, TOOLS, TOOL_ORDER, HALF, TILE } from './config.js';
+// DOM HUD: stats, toolbar, toasts, help, speedometer, minimap, optic scan, menus.
+import { TOOLS, TOOL_ORDER, TILE, buildingYield } from './config.js';
+import { listSlots } from './saves.js';
 
 const $ = (id) => document.getElementById(id);
 const fmt = (n) => Math.floor(n).toLocaleString('en-US');
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const HELP = {
-  build: `<b>LMB</b> place / drag · <b>RMB</b> orbit<br><b>WASD</b> pan · <b>Q/E</b> rotate · <b>wheel</b> zoom<br><b>1-8</b> tools · <b>F</b> walk · <b>V</b> drive · <b>H</b> hide HUD`,
-  walk: `<b>WASD</b> move · <b>Shift</b> run · <b>Space</b> jump<br><b>Mouse</b> look · <b>V</b> summon car<br><b>B</b> back to builder · <b>H</b> hide HUD`,
-  drive: `<b>W/S</b> throttle / brake · <b>A/D</b> steer<br><b>Space</b> drift · <b>Shift</b> boost · <b>C</b> camera<br><b>F</b> get out · <b>B</b> builder · <b>H</b> hide HUD`,
+  build: `<b>LMB</b> place / drag · <b>RMB</b> orbit<br><b>WASD</b> pan (<b>Shift</b> fast) · <b>Q/E</b> rotate · <b>wheel</b> zoom<br><b>1-9 0 -</b> build · <b>G</b> grow · <b>X</b> demolish<br><b>F</b> walk · <b>V</b> drive · <b>Esc</b> menu · <b>H</b> hide HUD`,
+  walk: `<b>WASD</b> move · <b>Shift</b> run · <b>Space</b> jump<br><b>Mouse</b> look · <b>V</b> summon car<br><b>B</b> builder · <b>Esc</b> menu · <b>H</b> hide HUD`,
+  drive: `<b>W/S</b> throttle / brake · <b>A/D</b> steer<br><b>Space</b> drift · <b>Shift</b> boost · <b>C</b> camera<br><b>X</b> optic overlay · <b>F</b> get out · <b>B</b> builder · <b>Esc</b> menu`,
 };
+const TYPE_COLORS = { habitat: [255, 176, 46], corp: [46, 246, 255], arcology: [255, 43, 214], plaza: [57, 255, 156], billboard: [255, 94, 168], powercore: [255, 106, 46], dataspire: [57, 255, 156], dronehub: [158, 243, 255], clinic: [255, 94, 168], uplink: [138, 92, 255] };
+const MM = 72; // tiles shown across the minimap
+
+function timeAgo(ts) {
+  const s = (Date.now() - ts) / 1000;
+  if (s < 60) return 'just now';
+  if (s < 3600) return Math.floor(s / 60) + ' min ago';
+  if (s < 86400) return Math.floor(s / 3600) + ' h ago';
+  return Math.floor(s / 86400) + ' d ago';
+}
 
 export class UI {
   constructor(handlers) {
     this.h = handlers;
     const bar = $('toolbar');
-    TOOL_ORDER.forEach((key, k) => {
+    TOOL_ORDER.forEach((key) => {
       const t = TOOLS[key];
       const b = document.createElement('button');
       b.className = 'tool';
       b.dataset.tool = key;
-      b.title = t.desc;
+      b.title = `${t.name} — ${t.desc}`;
       b.style.color = t.color;
       b.style.setProperty('--tc', t.color);
-      b.innerHTML = `<span class="key">${k + 1}</span><span class="ico">${t.icon}</span><span>${t.name}</span><span class="cost">${t.cost ? '¢' + t.cost : '&nbsp;'}</span>`;
+      b.innerHTML = `<span class="key">${t.key}</span><span class="ico">${t.icon}</span><span class="nm">${t.name}</span><span class="cost">${t.cost ? '¢' + fmt(t.cost) : '&nbsp;'}</span>`;
       b.onclick = () => handlers.tool(key);
       bar.appendChild(b);
     });
-    document.querySelectorAll('.modes button').forEach((b) => (b.onclick = () => handlers.mode(b.dataset.mode)));
-    $('btn-generate').onclick = handlers.generate;
-    $('btn-clear').onclick = handlers.clear;
+    document.querySelectorAll('.modes button[data-mode]').forEach((b) => (b.onclick = () => handlers.mode(b.dataset.mode)));
+    $('btn-menu').onclick = () => handlers.menu(true);
     for (const id of ['rain', 'sound', 'fx', 'growth', 'sandbox']) {
       const el = $('tg-' + id);
       el.onchange = () => { handlers.toggle(id, el.checked); el.blur(); };
     }
+    // title screen
+    $('t-continue').onclick = () => { const s = listSlots()[0]; if (s) handlers.loadSlot(s.id); };
+    $('t-new').onclick = () => this.showPanel('new');
+    $('t-load').onclick = () => { this.renderSlots(); this.showPanel('load'); };
+    $('t-import').onclick = () => handlers.importSave();
+    document.querySelectorAll('[data-back]').forEach((b) => (b.onclick = () => this.showPanel('main')));
+    $('nw-reroll').onclick = () => { $('nw-seed').value = Math.floor(Math.random() * 1e9); };
+    $('nw-start').onclick = () => {
+      const name = $('nw-name').value.trim() || 'New Sprawl';
+      const seed = parseInt($('nw-seed').value, 10) || Math.floor(Math.random() * 1e9);
+      handlers.newWorld({ name, seed, sandbox: $('nw-sandbox').checked });
+    };
+    // pause menu
+    $('m-resume').onclick = () => handlers.menu(false);
+    $('m-save').onclick = () => handlers.save();
+    $('m-saveas').onclick = () => handlers.saveAs();
+    $('m-export').onclick = () => handlers.exportSave();
+    $('m-quit').onclick = () => handlers.quit();
+
     this.mm = $('minimap').getContext('2d');
     this.mmBase = document.createElement('canvas');
-    this.mmBase.width = this.mmBase.height = GRID;
+    this.mmBase.width = this.mmBase.height = MM;
+    this.mmCtx = this.mmBase.getContext('2d');
+    this.mmImg = this.mmCtx.createImageData(MM, MM);
+    this.mmOrigin = { i: 0, j: 0 };
+    this.scanKey = null;
   }
 
+  // ---------------------------------------------------------------- title / menus
+  showTitle(on) {
+    document.body.classList.toggle('title', on);
+    if (on) {
+      const has = listSlots().length > 0;
+      $('t-continue').style.display = has ? '' : 'none';
+      $('t-load').style.display = has ? '' : 'none';
+      if (has) $('t-continue').querySelector('small').textContent = listSlots()[0].name;
+      this.showPanel('main');
+    }
+  }
+  showPanel(name) {
+    document.querySelectorAll('#title .panel').forEach((p) => p.classList.toggle('show', p.dataset.panel === name));
+    if (name === 'new') {
+      $('nw-seed').value = Math.floor(Math.random() * 1e9);
+      $('nw-name').value = '';
+      setTimeout(() => $('nw-name').focus(), 50);
+    }
+  }
+  renderSlots() {
+    const list = listSlots();
+    const el = $('slot-list');
+    el.innerHTML = list.length ? '' : '<p class="dim">No saved cities yet.</p>';
+    for (const s of list) {
+      const row = document.createElement('div');
+      row.className = 'slot';
+      row.innerHTML = `<div class="si"><b>${esc(s.name)}</b><span>seed ${s.seed} · ${fmt(s.pop || 0)} residents · ¢${fmt(s.credits || 0)} · ${timeAgo(s.updated)}</span></div>
+        <button class="go">Load</button><button class="ex" title="Export to file">⤓</button><button class="del" title="Delete">✖</button>`;
+      row.querySelector('.go').onclick = () => this.h.loadSlot(s.id);
+      row.querySelector('.ex').onclick = () => this.h.exportSlot(s.id);
+      row.querySelector('.del').onclick = () => { if (confirm(`Delete "${s.name}" permanently?`)) { this.h.deleteSlot(s.id); this.renderSlots(); } };
+      el.appendChild(row);
+    }
+  }
+  showMenu(on, name = '') {
+    document.body.classList.toggle('paused', on);
+    if (on) $('m-name').textContent = name;
+  }
+  setLoading(on, progress = 0, label = '') {
+    document.body.classList.toggle('loading', on);
+    $('load-bar').style.width = Math.round(progress * 100) + '%';
+    if (label) $('load-label').textContent = label;
+  }
+
+  // ---------------------------------------------------------------- hud
   setToggle(id, v) { $('tg-' + id).checked = v; }
   setMode(m) {
     document.body.classList.remove('mode-build', 'mode-walk', 'mode-drive');
     document.body.classList.add('mode-' + m);
-    document.querySelectorAll('.modes button').forEach((b) => b.classList.toggle('active', b.dataset.mode === m));
+    document.querySelectorAll('.modes button[data-mode]').forEach((b) => b.classList.toggle('active', b.dataset.mode === m));
     $('help').innerHTML = HELP[m];
   }
   setTool(key) {
@@ -53,6 +132,9 @@ export class UI {
     $('st-pop').textContent = fmt(s.pop);
     $('st-jobs').textContent = fmt(s.jobs);
     $('st-income').textContent = '+¢' + fmt(s.income) + '/s';
+    const p = $('st-power');
+    p.textContent = `${fmt(s.demand)}/${fmt(s.supply)} MW`;
+    p.classList.toggle('bad', s.ratio < 1);
   }
   setInfo(text) {
     const el = $('info');
@@ -72,29 +154,62 @@ export class UI {
     $('speed').textContent = Math.round(kmh);
     $('boostbar').style.width = (boost * 100).toFixed(0) + '%';
   }
+  setAugments(dash, legs) {
+    $('aug-dash').style.width = Math.round(dash * 100) + '%';
+    $('aug-dash').parentElement.parentElement.classList.toggle('ready', dash >= 1);
+    $('aug-legs').parentElement.classList.toggle('ready', legs);
+  }
+  setScan(hit) {
+    const el = $('scan');
+    if (!hit) { if (this.scanKey !== null) { el.classList.remove('show'); this.scanKey = null; } return; }
+    const b = hit.b;
+    const key = b.id + ':' + b.level + ':' + Math.round(hit.d);
+    if (key === this.scanKey) return;
+    this.scanKey = key;
+    const y = buildingYield(b.type, b.level);
+    const occ = b.owned ? 'YOURS' : esc(b.corp);
+    const sec = ['LOW', 'MED', 'HIGH', 'BLACK-ICE'][b.seed % 4];
+    el.innerHTML = `<div class="sh">◢ OPTIC SCAN ◣</div>
+      <div class="sn">${esc(TOOLS[b.type].name)} <i>LVL ${b.level}</i></div>
+      <div class="sr"><span>OWNER</span><b>${occ}</b></div>
+      <div class="sr"><span>HEIGHT</span><b>${Math.round(b.height)} m</b></div>
+      <div class="sr"><span>RANGE</span><b>${Math.round(hit.d)} m</b></div>
+      ${y.pop ? `<div class="sr"><span>OCCUPANTS</span><b>${fmt(y.pop)}</b></div>` : ''}
+      ${y.jobs ? `<div class="sr"><span>WORKFORCE</span><b>${fmt(y.jobs)}</b></div>` : ''}
+      <div class="sr"><span>NET SECURITY</span><b class="${sec === 'BLACK-ICE' ? 'bad' : ''}">${sec}</b></div>
+      <div class="sr"><span>NODE</span><b>${(b.seed >>> 8).toString(16).toUpperCase().padStart(6, '0')}</b></div>`;
+    el.classList.add('show');
+  }
 
-  drawMinimapBase(city) {
-    const g = this.mmBase.getContext('2d');
-    g.fillStyle = '#07040f';
-    g.fillRect(0, 0, GRID, GRID);
-    const colors = { habitat: '#ffb02e', corp: '#2ef6ff', arcology: '#ff2bd6', plaza: '#39ff9c', billboard: '#ff5ea8' };
-    for (let j = 0; j < GRID; j++) for (let i = 0; i < GRID; i++) {
-      if (city.isRoad(i, j)) { g.fillStyle = '#3c3f5c'; g.fillRect(i, j, 1, 1); continue; }
-      const b = city.buildingAt(i, j);
-      if (b) {
-        g.globalAlpha = 0.45 + 0.09 * b.level;
-        g.fillStyle = colors[b.type];
-        g.fillRect(i, j, 1, 1);
-        g.globalAlpha = 1;
+  // ---------------------------------------------------------------- minimap (local window)
+  drawMinimapBase(city, fx, fz) {
+    const ci = Math.floor(fx / TILE) - MM / 2, cj = Math.floor(fz / TILE) - MM / 2;
+    this.mmOrigin = { i: ci, j: cj };
+    const d = this.mmImg.data;
+    for (let b = 0; b < MM; b++) for (let a = 0; a < MM; a++) {
+      const o = (b * MM + a) * 4;
+      const i = ci + a, j = cj + b;
+      let r = 7, g = 4, bl = 15;
+      const loaded = city.chunkAt(i, j);
+      if (city.isRoad(i, j)) { r = 60; g = 63; bl = 92; }
+      else if (loaded) {
+        const x = city.buildingAt(i, j);
+        if (x) {
+          const c = TYPE_COLORS[x.type];
+          const k = x.owned ? 1 : 0.22 + 0.04 * x.level;
+          r = c[0] * k; g = c[1] * k; bl = c[2] * k;
+        }
       }
+      d[o] = r; d[o + 1] = g; d[o + 2] = bl; d[o + 3] = 255;
     }
+    this.mmCtx.putImageData(this.mmImg, 0, 0);
   }
   drawMinimap(x, z, yaw) {
-    const g = this.mm, W = 180;
+    const g = this.mm, W = $('minimap').width;
     g.imageSmoothingEnabled = false;
     g.drawImage(this.mmBase, 0, 0, W, W);
-    const s = W / (GRID * TILE);
-    const px = (x + HALF) * s, pz = (z + HALF) * s;
+    const s = W / MM;
+    const px = (x / TILE - this.mmOrigin.i) * s, pz = (z / TILE - this.mmOrigin.j) * s;
     g.save();
     g.translate(px, pz);
     g.rotate(-yaw);
@@ -102,5 +217,8 @@ export class UI {
     g.shadowColor = '#2ef6ff'; g.shadowBlur = 8;
     g.beginPath(); g.moveTo(0, -7); g.lineTo(5, 5); g.lineTo(0, 2); g.lineTo(-5, 5); g.closePath(); g.fill();
     g.restore();
+    g.fillStyle = 'rgba(46,246,255,0.7)';
+    g.font = '10px monospace';
+    g.fillText(`${Math.round(x)}, ${Math.round(z)}`, 4, W - 5);
   }
 }

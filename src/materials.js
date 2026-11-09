@@ -53,6 +53,20 @@ function windowTexture(seed, palette, lit, style = 'grid') {
         g.fillRect(x, y + 18, 3, 30);
         continue;
       }
+      if (style === 'server') {
+        // server racks: rows of tiny status LEDs behind vents
+        g.fillStyle = '#0a0d12';
+        g.fillRect(x + 4, y + 6, cw - 8, ch - 12);
+        for (let s = 0; s < 4; s++) {
+          for (let t = 0; t < 6; t++) {
+            if (r() < lit + floorBias) {
+              g.fillStyle = r.pick(palette);
+              g.fillRect(x + 8 + t * 8.5, y + 12 + s * 12, 4, 3);
+            }
+          }
+        }
+        continue;
+      }
       if (style === 'dense') {
         for (let s = 0; s < 2; s++) {
           for (let t = 0; t < 2; t++) {
@@ -225,6 +239,27 @@ function poolTexture() {
   return tex(c, { repeat: false });
 }
 
+// Falling glyph columns, scrolled every frame.
+function dataTexture() {
+  const r = mulberry32(31337);
+  const [c, g] = canvas(256, 512);
+  g.clearRect(0, 0, 256, 512);
+  g.font = 'bold 18px monospace';
+  g.textAlign = 'center';
+  for (let col = 0; col < 14; col++) {
+    const x = 9 + col * 18;
+    let y = r.range(0, 512);
+    const len = r.int(8, 22);
+    for (let k = 0; k < len; k++) {
+      const a = 1 - k / len;
+      g.fillStyle = k === 0 ? `rgba(220,255,240,${a})` : `rgba(57,255,156,${a * 0.9})`;
+      g.fillText(glyphs(r, 1), x, ((y - k * 20) % 512 + 512) % 512);
+    }
+  }
+  const t = tex(c, { srgb: true });
+  return t;
+}
+
 function labelTexture(text, color) {
   const [c, g] = canvas(256, 64);
   g.fillStyle = 'rgba(20,0,10,0.75)';
@@ -284,6 +319,7 @@ export function initMaterials(renderer) {
   MAT.winCorp = windowMat(windowTexture(505, ['#7fdcff', '#d4f6ff', '#5ab0ff', '#a6b8ff'], 0.3, 'ribbon'), 0.9);
   MAT.winCorp2 = windowMat(windowTexture(606, ['#ffd38a', '#fff3d6', '#ff9a8a'], 0.28, 'ribbon'), 0.9);
   MAT.winMega = windowMat(windowTexture(707, mixed, 0.24, 'dense'));
+  MAT.winServer = windowMat(windowTexture(909, ['#39ff9c', '#2ef6ff', '#39ff9c', '#ffb02e', '#ff2848'], 0.45, 'server'), 1.4);
   MAT.winSky = windowMat(windowTexture(808, mixed, 0.08), 0.8); // distant skyline
   MAT.winSky.fog = true;
 
@@ -344,6 +380,22 @@ export function initMaterials(renderer) {
     color: new THREE.Color(0x8fb8ff).multiplyScalar(0.35), transparent: true, opacity: 0.18,
     blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false,
   });
+  MAT.plasma = neonBasic(0xff6a2e, 3);
+  MAT.plasmaB = neonBasic(0x2ef6ff, 3);
+  MAT.laser = new THREE.MeshBasicMaterial({
+    color: new THREE.Color(0x8a5cff).multiplyScalar(2.5), transparent: true, opacity: 0.55,
+    blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
+  });
+  MAT.vat = new THREE.MeshStandardMaterial({
+    color: 0x0a3a40, emissive: 0x1de9b6, emissiveIntensity: 0.6, transparent: true, opacity: 0.45,
+    roughness: 0.05, metalness: 0.2, depthWrite: false,
+  });
+  MAT.dataStream = new THREE.MeshBasicMaterial({
+    map: dataTexture(), color: new THREE.Color(1.6, 1.6, 1.6), transparent: true,
+    blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, side: THREE.DoubleSide,
+  });
+  MAT.cable = new THREE.MeshStandardMaterial({ color: 0x07070b, roughness: 0.8, metalness: 0.3 });
+  MAT.noPower = new THREE.SpriteMaterial({ map: labelTexture('⚡ NO POWER', '#ffb02e'), depthTest: false, toneMapped: false, color: new THREE.Color(1.5, 1.5, 1.5) });
   MAT.warnLabel = new THREE.SpriteMaterial({ map: labelTexture('⚠ NO ROAD', '#ff3a5c'), depthTest: false, toneMapped: false, color: new THREE.Color(1.5, 1.5, 1.5) });
 
   return envMap;
@@ -359,4 +411,9 @@ export function animateMaterials(t) {
   MAT.holo.opacity = flick;
   MAT.holoM.opacity = flick;
   MAT.holoWire.opacity = flick + 0.2;
+  const p = 2.2 + Math.sin(t * 4) * 0.9 + Math.sin(t * 13) * 0.25;
+  MAT.plasma.color.setRGB(p * 1.0, p * 0.42, p * 0.18);
+  MAT.plasmaB.color.setRGB(p * 0.18, p * 0.96, p * 1.0);
+  MAT.laser.opacity = 0.4 + Math.sin(t * 6) * 0.12;
+  MAT.dataStream.map.offset.y = (t * 0.35) % 1;
 }

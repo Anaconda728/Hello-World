@@ -1,5 +1,3 @@
-import { BOUNDS } from '../config.js';
-
 // Push a circle (pos.x, pos.z, radius r) out of axis-aligned rects. Returns the
 // last collision normal {x, z} or null.
 export function resolveCircle(pos, r, rects) {
@@ -25,7 +23,5 @@ export function resolveCircle(pos, r, rects) {
       if (m === 3) { pos.z = z1 + r; hit = { x: 0, z: 1 }; }
     }
   }
-  if (Math.abs(pos.x) > BOUNDS) { hit = { x: -Math.sign(pos.x), z: 0 }; pos.x = Math.sign(pos.x) * BOUNDS; }
-  if (Math.abs(pos.z) > BOUNDS) { hit = { x: 0, z: -Math.sign(pos.z) }; pos.z = Math.sign(pos.z) * BOUNDS; }
   return hit;
 }

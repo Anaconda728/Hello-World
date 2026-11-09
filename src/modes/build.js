@@ -1,8 +1,10 @@
 // Top-down builder: orbit camera, tile picking, tool placement with live previews.
 import * as THREE from 'three';
-import { GRID, TILE, HALF, TOOLS, TOOL_ORDER, MAX_LEVEL, worldToTile, tileCenter, inGrid, buildingYield } from '../config.js';
+import { TILE, TOOLS, TOOL_ORDER, MAX_LEVEL, NO_ROAD_NEEDED, worldToTile, tileCenter, buildingYield } from '../config.js';
+import { CORPS } from '../city.js';
 
-const MAX_PREVIEW = GRID * 2 + 4;
+const MAX_PREVIEW = 160;
+const inGrid = () => true;
 
 export class BuildMode {
   constructor(ctx) {
@@ -11,7 +13,7 @@ export class BuildMode {
     this.target = new THREE.Vector3(0, 0, 0);
     this.yaw = Math.PI * 0.25;
     this.pitch = 0.85;
-    this.dist = 330;
+    this.dist = 260;
     this.smooth = { target: this.target.clone(), yaw: this.yaw, pitch: this.pitch, dist: this.dist };
     this.tool = 'road';
     this.keys = new Set();
@@ -35,10 +37,10 @@ export class BuildMode {
     scene.add(this.multi);
 
     const dom = ctx.renderer.domElement;
-    dom.addEventListener('pointerdown', (e) => this.active && this.onDown(e));
+    dom.addEventListener('pointerdown', (e) => this.active && !this.ctx.paused && this.onDown(e));
     window.addEventListener('pointermove', (e) => this.active && this.onMove(e));
     window.addEventListener('pointerup', (e) => this.active && this.onUp(e));
-    dom.addEventListener('wheel', (e) => { if (this.active) { e.preventDefault(); this.dist = THREE.MathUtils.clamp(this.dist * Math.exp(e.deltaY * 0.0012), 40, 700); } }, { passive: false });
+    dom.addEventListener('wheel', (e) => { if (this.active) { e.preventDefault(); this.dist = THREE.MathUtils.clamp(this.dist * Math.exp(e.deltaY * 0.0012), 40, 480); } }, { passive: false });
     dom.addEventListener('contextmenu', (e) => e.preventDefault());
     window.addEventListener('keydown', (e) => this.active && this.onKey(e, true));
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
@@ -49,7 +51,7 @@ export class BuildMode {
     this.active = true;
     this.ghost.visible = true;
     this.ctx.world.grid.visible = true;
-    this.ctx.scene.fog.density = 0.0016;
+    this.ctx.scene.fog.density = 0.0021;
     this.ctx.camera.fov = 50;
     this.ctx.camera.updateProjectionMatrix();
   }
@@ -72,10 +74,12 @@ export class BuildMode {
   }
 
   onKey(e, down) {
-    if (e.target.tagName === 'INPUT') return;
+    if (e.target.tagName === 'INPUT' || this.ctx.paused) return;
     this.keys.add(e.code);
-    const n = parseInt(e.key, 10);
-    if (n >= 1 && n <= TOOL_ORDER.length) this.setTool(TOOL_ORDER[n - 1]);
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const key = e.key.toUpperCase();
+    const t = TOOL_ORDER.find((k) => TOOLS[k].key === key);
+    if (t) this.setTool(t);
   }
 
   pick(e) {
@@ -181,8 +185,9 @@ export class BuildMode {
   }
   rect(a, b) {
     const out = [];
-    for (let i = Math.min(a.i, b.i); i <= Math.max(a.i, b.i); i++)
-      for (let j = Math.min(a.j, b.j); j <= Math.max(a.j, b.j); j++) if (inGrid(i, j)) out.push([i, j]);
+    const i0 = Math.min(a.i, b.i), j0 = Math.min(a.j, b.j);
+    const i1 = Math.min(Math.max(a.i, b.i), i0 + 11), j1 = Math.min(Math.max(a.j, b.j), j0 + 11);
+    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) out.push([i, j]);
     return out;
   }
 
@@ -234,12 +239,15 @@ export class BuildMode {
 
     if (b) {
       const y = buildingYield(b.type, b.level);
-      const conn = b.type === 'plaza' || b.type === 'billboard' || city.connected(b);
-      let s = `${TOOLS[b.type].name} · LVL ${b.level} · ${Math.round(b.height)}m`;
-      if (y.pop) s += ` · ${y.pop} residents`;
-      if (y.jobs) s += ` · ${y.jobs} jobs`;
-      s += conn ? '' : ' · NO ROAD ACCESS';
-      if (this.tool === 'grow') s += b.level < MAX_LEVEL ? ` — grow ¢${city.growCost(b)}` : ' — max height';
+      const conn = NO_ROAD_NEEDED.has(b.type) || city.connected(b);
+      let s = `${TOOLS[b.type].name} · LVL ${b.level} · ${Math.round(b.height)}m · ${b.owned ? 'YOURS' : 'Sprawl / ' + b.corp}`;
+      if (b.owned) {
+        if (y.pop) s += ` · ${y.pop} residents`;
+        if (y.jobs) s += ` · ${y.jobs} jobs`;
+        if (y.power) s += ` · ${y.power > 0 ? '+' : ''}${y.power} MW`;
+        s += conn ? '' : ' · NO ROAD ACCESS';
+      }
+      if (this.tool === 'grow') s += b.level < MAX_LEVEL ? ` — grow ¢${city.growCost(b)}${b.owned ? '' : ' (claims it)'}` : ' — max height';
       this.ctx.ui.setInfo(s);
     } else if (this.tool !== 'grow' && this.tool !== 'bulldoze') {
       this.ctx.ui.setInfo(`${t.name} — ¢${t.cost}`);
@@ -248,7 +256,7 @@ export class BuildMode {
 
   update(dt) {
     const k = this.keys;
-    const speed = this.dist * 1.1 * dt;
+    const speed = this.dist * (k.has('ShiftLeft') || k.has('ShiftRight') ? 2.6 : 1.1) * dt;
     const fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw);
     const rx = Math.cos(this.yaw), rz = -Math.sin(this.yaw);
     if (k.has('KeyW') || k.has('ArrowUp')) { this.target.x += fx * speed; this.target.z += fz * speed; }
@@ -257,11 +265,9 @@ export class BuildMode {
     if (k.has('KeyA') || k.has('ArrowLeft')) { this.target.x -= rx * speed; this.target.z -= rz * speed; }
     if (k.has('KeyQ')) this.yaw += 1.6 * dt;
     if (k.has('KeyE')) this.yaw -= 1.6 * dt;
+    if (k.has('ShiftLeft')) { /* fast pan */ }
     if (k.has('KeyR')) this.dist = Math.max(40, this.dist * (1 - dt * 1.5));
-    if (k.has('KeyT')) this.dist = Math.min(700, this.dist * (1 + dt * 1.5));
-    const lim = HALF + 60;
-    this.target.x = THREE.MathUtils.clamp(this.target.x, -lim, lim);
-    this.target.z = THREE.MathUtils.clamp(this.target.z, -lim, lim);
+    if (k.has('KeyT')) this.dist = Math.min(480, this.dist * (1 + dt * 1.5));
 
     const s = this.smooth, a = 1 - Math.exp(-dt * 10);
     s.target.lerp(this.target, a);

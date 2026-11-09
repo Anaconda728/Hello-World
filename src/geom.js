@@ -115,7 +115,7 @@ export class Parts {
 }
 
 // Merge several Map(key->geo) into meshes. Source geometries are left untouched.
-export function meshesFromPartMaps(maps, MAT) {
+export function meshesFromPartMaps(maps, MAT, freeCpu = false) {
   const byKey = new Map();
   for (const m of maps) {
     for (const [k, g] of m) {
@@ -127,6 +127,10 @@ export function meshesFromPartMaps(maps, MAT) {
   for (const [k, list] of byKey) {
     const geo = list.length === 1 ? list[0].clone() : mergeGeometries(list, false);
     geo.computeBoundingSphere();
+    if (freeCpu) {
+      // the GPU keeps its copy; drop the JS arrays once uploaded to save memory
+      for (const attr of Object.values(geo.attributes)) attr.onUpload(function () { this.array = null; });
+    }
     const mesh = new THREE.Mesh(geo, MAT[k]);
     mesh.matrixAutoUpdate = false;
     meshes.push(mesh);

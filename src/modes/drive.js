@@ -57,7 +57,7 @@ export class DriveMode {
     this.shake = 0;
     this.keys = new Set();
     window.addEventListener('keydown', (e) => {
-      if (!this.active) return;
+      if (!this.active || this.ctx.paused) return;
       this.keys.add(e.code);
       if (e.code === 'KeyC') this.camMode = (this.camMode + 1) % 3;
     });

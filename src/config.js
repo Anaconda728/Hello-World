@@ -1,9 +1,12 @@
-// Grid + world constants shared by every module.
-export const GRID = 40;          // tiles per side
-export const TILE = 12;          // metres per tile
-export const HALF = (GRID * TILE) / 2;
-export const CHUNK = 8;          // tiles per render chunk (buildings are merged per chunk)
-export const BOUNDS = HALF + 160; // how far the player may roam outside the grid
+// World + tool constants shared by every module. The world is an infinite tile grid
+// streamed in square chunks around the player.
+export const TILE = 12;              // metres per tile
+export const CHUNK = 16;             // tiles per chunk side
+export const CHUNK_W = CHUNK * TILE; // metres per chunk side
+export const LOAD_DIST = CHUNK_W * 2.35; // chunks whose centre is within this get built
+export const UNLOAD_DIST = CHUNK_W * 3.4;
+export const FREE_ZONE = 8;          // tiles around the origin left empty for the player in new worlds
+export const SUPERBLOCK = 12;        // main avenues every N tiles
 
 export const DIRS = [
   [1, 0],  // E (+x)
@@ -13,34 +16,47 @@ export const DIRS = [
 ];
 
 export function tileCenter(i, j) {
-  return { x: (i + 0.5) * TILE - HALF, z: (j + 0.5) * TILE - HALF };
+  return { x: (i + 0.5) * TILE, z: (j + 0.5) * TILE };
 }
 export function worldToTile(x, z) {
-  return { i: Math.floor((x + HALF) / TILE), j: Math.floor((z + HALF) / TILE) };
+  return { i: Math.floor(x / TILE), j: Math.floor(z / TILE) };
 }
-export function inGrid(i, j) {
-  return i >= 0 && j >= 0 && i < GRID && j < GRID;
-}
+export const chunkCoord = (t) => Math.floor(t / CHUNK);
+export const chunkKey = (cx, cz) => cx + ',' + cz;
 
-// Build tools. `size` is the footprint in tiles.
+// Build tools. `size` is the footprint in tiles; `key` is the keyboard shortcut.
 export const TOOLS = {
-  road:      { name: 'Road',       icon: '▦', cost: 15,   size: 1, color: '#2ef6ff', desc: 'Drag to lay roads. Buildings need a road next to them.' },
-  habitat:   { name: 'Hab Stack',  icon: '▥', cost: 500,  size: 1, color: '#ffb02e', desc: 'Residential tower. Houses people.' },
-  corp:      { name: 'Corp Tower', icon: '◈', cost: 1500, size: 1, color: '#2ef6ff', desc: 'Corporate spire. Provides jobs.' },
-  arcology:  { name: 'Arcology',   icon: '▣', cost: 6000, size: 2, color: '#ff2bd6', desc: '2×2 megastructure. Homes and jobs.' },
-  plaza:     { name: 'Neon Plaza', icon: '✦', cost: 250,  size: 1, color: '#39ff9c', desc: 'Glowing park. Boosts nearby growth.' },
-  billboard: { name: 'Holo-Ad',    icon: '◧', cost: 300,  size: 1, color: '#ff5ea8', desc: 'Towering holographic billboard.' },
-  grow:      { name: 'Grow',       icon: '▲', cost: 0,    size: 1, color: '#8a5cff', desc: 'Click a building to add height (costs 60% of base per level).' },
-  bulldoze:  { name: 'Demolish',   icon: '✖', cost: 0,    size: 1, color: '#ff4060', desc: 'Drag a box to demolish. Refunds 50%.' },
+  road:      { name: 'Road',        icon: '▦', cost: 15,   size: 1, key: '1', color: '#2ef6ff', desc: 'Drag to lay roads. Most buildings need a road next to them.' },
+  habitat:   { name: 'Hab Stack',   icon: '▥', cost: 500,  size: 1, key: '2', color: '#ffb02e', desc: 'Residential tower. Houses people. Uses power.' },
+  corp:      { name: 'Corp Tower',  icon: '◈', cost: 1500, size: 1, key: '3', color: '#2ef6ff', desc: 'Corporate spire. Provides jobs. Uses power.' },
+  arcology:  { name: 'Arcology',    icon: '▣', cost: 6000, size: 2, key: '4', color: '#ff2bd6', desc: '2×2 megastructure. Homes and jobs. Power hungry.' },
+  powercore: { name: 'Fusion Core', icon: '◉', cost: 2500, size: 1, key: '5', color: '#ff6a2e', desc: 'Plasma reactor. Supplies power to the district. No road needed.' },
+  dataspire: { name: 'Data Spire',  icon: '▤', cost: 2200, size: 1, key: '6', color: '#39ff9c', desc: 'Server tower streaming data. Jobs and bonus income.' },
+  dronehub:  { name: 'Drone Hub',   icon: '✈', cost: 1800, size: 1, key: '7', color: '#9ef3ff', desc: 'Delivery drone port. Jobs and bonus income.' },
+  clinic:    { name: 'Chrome Clinic', icon: '⚕', cost: 1600, size: 1, key: '8', color: '#ff5ea8', desc: 'Cybernetics clinic with augmentation vats. Jobs, attracts residents.' },
+  uplink:    { name: 'Uplink Array', icon: '⟟', cost: 2800, size: 1, key: '9', color: '#8a5cff', desc: 'Orbital uplink tower beaming to the satellites. Big bonus income.' },
+  plaza:     { name: 'Neon Plaza',  icon: '✦', cost: 250,  size: 1, key: '0', color: '#39ff9c', desc: 'Glowing park. Speeds up growth nearby. No road needed.' },
+  billboard: { name: 'Holo-Ad',     icon: '◧', cost: 300,  size: 1, key: '-', color: '#ff5ea8', desc: 'Towering holographic billboard. Small bonus income.' },
+  grow:      { name: 'Grow',        icon: '▲', cost: 0,    size: 1, key: 'G', color: '#c08bff', desc: 'Click a building to add height (60% of base cost per level). Claims sprawl buildings.' },
+  bulldoze:  { name: 'Demolish',    icon: '✖', cost: 0,    size: 1, key: 'X', color: '#ff4060', desc: 'Drag a box to demolish. Refunds 50% of your own buildings.' },
 };
-export const TOOL_ORDER = ['road', 'habitat', 'corp', 'arcology', 'plaza', 'billboard', 'grow', 'bulldoze'];
+export const TOOL_ORDER = Object.keys(TOOLS);
 export const MAX_LEVEL = 6;
+export const NO_ROAD_NEEDED = new Set(['plaza', 'billboard', 'powercore']);
 
+// What each building contributes when owned + connected.
 export function buildingYield(type, level) {
+  const L = level;
   switch (type) {
-    case 'habitat': return { pop: 60 * level, jobs: 0 };
-    case 'corp': return { pop: 0, jobs: 90 * level };
-    case 'arcology': return { pop: 260 * level, jobs: 180 * level };
-    default: return { pop: 0, jobs: 0 };
+    case 'habitat':   return { pop: 60 * L, jobs: 0, power: -8 * L, bonus: 0 };
+    case 'corp':      return { pop: 0, jobs: 90 * L, power: -20 * L, bonus: 0 };
+    case 'arcology':  return { pop: 260 * L, jobs: 180 * L, power: -70 * L, bonus: 0 };
+    case 'powercore': return { pop: 0, jobs: 15 * L, power: 450 * L, bonus: 0 };
+    case 'dataspire': return { pop: 0, jobs: 50 * L, power: -45 * L, bonus: 14 * L };
+    case 'dronehub':  return { pop: 0, jobs: 40 * L, power: -18 * L, bonus: 8 * L };
+    case 'clinic':    return { pop: 25 * L, jobs: 35 * L, power: -15 * L, bonus: 6 * L };
+    case 'uplink':    return { pop: 0, jobs: 20 * L, power: -35 * L, bonus: 22 * L };
+    case 'billboard': return { pop: 0, jobs: 0, power: -2 * L, bonus: 2 * L };
+    default:          return { pop: 0, jobs: 0, power: 0, bonus: 0 };
   }
 }

@@ -40,6 +40,32 @@ function blink(P, x, y, z, s = 0.4) {
   P.box(Math.random() < 0.5 ? 'blinkA' : 'blinkB', s, s, s, x, y, z, 0, false);
 }
 
+const dishGeo = new THREE.SphereGeometry(1, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2.6);
+function dish(P, r, x, y, z, s) {
+  P.cyl('metal', 0.12, 0.18, 1.2 * s, x, y, z, 6, false);
+  const g = dishGeo.clone();
+  g.scale(s, s * 0.5, s);
+  g.rotateX(PI + r.range(0.5, 1.1));
+  g.rotateY(r() * PI * 2);
+  P.geo('metal', g, x, y + 1.3 * s, z);
+  blink(P, x, y + 1.6 * s, z, 0.18);
+}
+
+// Vertical glowing data conduits running up a facade.
+function conduits(P, r, cx, cz, w, d, y0, h) {
+  const face = r.int(0, 3);
+  const key = r.chance(0.5) ? 'dim_cyan' : r.chance(0.5) ? 'dim_green' : 'dim_magenta';
+  const n = r.int(2, 4);
+  for (let k = 0; k < n; k++) {
+    const t = (k - (n - 1) / 2) * 0.35 + r.range(-1, 1) * 0.5;
+    const hh = h * r.range(0.5, 0.95);
+    if (face === 0) P.box(key, 0.1, hh, 0.1, cx + w / 2 + 0.12, y0 + hh / 2, cz + t, 0, false);
+    if (face === 2) P.box(key, 0.1, hh, 0.1, cx - w / 2 - 0.12, y0 + hh / 2, cz + t, 0, false);
+    if (face === 1) P.box(key, 0.1, hh, 0.1, cx + t, y0 + hh / 2, cz + d / 2 + 0.12, 0, false);
+    if (face === 3) P.box(key, 0.1, hh, 0.1, cx + t, y0 + hh / 2, cz - d / 2 - 0.12, 0, false);
+  }
+}
+
 function antenna(P, r, x, y, z) {
   const h = r.range(4, 13);
   P.cyl('metal', 0.06, 0.12, h, x, y, z, 5, false);
@@ -95,6 +121,12 @@ function roof(P, r, cx, cz, w, d, y, opts = {}) {
     const tx = cx + r.range(-1, 1) * (w / 2 - 1.2), tz = cz + r.range(-1, 1) * (d / 2 - 1.2);
     P.cyl('metal', 0.9, 0.9, 1.8, tx, y + 1, tz, 10, false);
     P.boxB('metal', 0.15, 1, 0.15, tx, y, tz);
+  }
+  if (w > 4 && r.chance(0.3)) dish(P, r, cx + r.range(-1, 1) * (w / 2 - 1.5), y, cz + r.range(-1, 1) * (d / 2 - 1.5), r.range(0.9, 1.8));
+  if (w > 5 && r.chance(0.25)) {
+    const fx = cx + r.range(-1, 1) * (w / 2 - 2), fz = cz + r.range(-1, 1) * (d / 2 - 2);
+    for (let k = 0; k < 5; k++) P.boxB('metal', 0.08, 1.1, 2, fx - 0.8 + k * 0.4, y, fz);
+    P.boxB('dim_cyan', 2, 0.05, 2.1, fx, y + 1.1, fz);
   }
   if (r.chance(opts.antenna ?? 0.65)) antenna(P, r, cx + r.range(-1, 1) * w * 0.3, y, cz + r.range(-1, 1) * d * 0.3);
   if (w > 6 && r.chance(opts.billboard ?? 0.25)) {
@@ -167,6 +199,7 @@ export function genHabitat(level, seed, cx, cz) {
     const ns = r.int(1, 3);
     for (let k = 0; k < ns; k++) bladeSign(P, r, cx, cz, base.w, base.d, 0.2, base.h);
     if (r.chance(0.4)) flatAd(P, r, cx, cz, base.w, base.d, 0.2, base.h);
+    if (r.chance(0.35)) conduits(P, r, cx, cz, base.w, base.d, 0.2, base.h);
   } else if (style < 0.78) {
     const ph = r.range(6, 10);
     P.boxB(win, 9.6, ph, 9.6, cx, 0.2, cz);
@@ -242,6 +275,7 @@ export function genCorp(level, seed, cx, cz) {
     top = y + sh;
     if (r.chance(0.6)) holoCrown(anim, cx, y + 3, cz, r.chance(0.5));
     for (let k = 0; k < 2; k++) bladeSign(P, r, cx, cz, 9.6, 9.6, 0.2, H * 0.55);
+    if (r.chance(0.5)) conduits(P, r, cx, cz, 9.6, 9.6, 0.2, H * 0.55);
   } else if (style < 0.72) {
     const rot = r.chance(0.5);
     const w = rot ? 6.4 : 9.8, d = rot ? 9.8 : 6.4;
@@ -327,7 +361,7 @@ export function genArcology(level, seed, cx, cz) {
     y = roof(P, r, x, z, w2, w2, y, { billboard: 0.1 });
     towers.push({ x, z, h: ph + h1, w });
     top = Math.max(top, y);
-    if (k === 0) holoCrown(anim, x, y + 4, z, r.chance(0.5));
+    if (k === 0) { if (r.chance(0.35)) holoHead(anim, x, y + 9, z, 2.6); else holoCrown(anim, x, y + 4, z, r.chance(0.5)); }
   }
   // skybridges between adjacent towers
   for (let k = 0; k + 1 < towers.length; k++) {
@@ -411,7 +445,258 @@ export function genBillboard(level, seed, cx, cz) {
   return { parts: P.merge(), anim, height: by + bh / 2, rects: [[cx - 0.7, cz - 0.7, cx + 0.7, cz + 0.7], [cx + 1.5, cz + 1.5, cx + 4.5, cz + 4.5]] };
 }
 
+// ---------------------------------------------------------------- cyber holo-head
+// A giant floating wireframe head with a glowing optic visor: corporate cyber-idol.
+const headGeo = new THREE.IcosahedronGeometry(1.6, 1);
+headGeo.scale(0.85, 1.05, 0.95);
+const jawGeo = new THREE.CylinderGeometry(0.9, 0.55, 1.1, 8, 1, true);
+const visorGeo = new THREE.BoxGeometry(1.9, 0.28, 0.5);
+const neckGeo = new THREE.TorusGeometry(0.7, 0.05, 4, 24);
+const implantGeo = new THREE.BoxGeometry(0.08, 0.9, 0.08);
+function holoHead(anim, x, y, z, s = 1) {
+  const g = new THREE.Group();
+  const head = new THREE.Mesh(headGeo, MAT.holoWire);
+  const jaw = new THREE.Mesh(jawGeo, MAT.holoWire);
+  jaw.position.set(0, -1.5, 0.15);
+  const visor = new THREE.Mesh(visorGeo, MAT.neon_magenta);
+  visor.position.set(0, 0.25, 1.15);
+  const neck = new THREE.Mesh(neckGeo, MAT.holoM);
+  neck.rotation.x = PI / 2;
+  neck.position.y = -2.2;
+  g.add(head, jaw, visor, neck);
+  for (const sx of [-1, 1]) {
+    const imp = new THREE.Mesh(implantGeo, MAT.neon_cyan);
+    imp.position.set(sx * 1.38, 0.1, 0.2);
+    g.add(imp);
+  }
+  g.scale.setScalar(s);
+  g.position.set(x, y, z);
+  anim.push({ obj: g, spin: 0.25, bob: 0.6 * s });
+}
+
+// ---------------------------------------------------------------- fusion core
+export function genPowercore(level, seed, cx, cz) {
+  const r = mulberry32(seed);
+  const P = new Parts();
+  const anim = [];
+  sidewalk(P, cx, cz);
+  const H = 14 + level * 4;
+  P.cyl('metal', 5, 5.4, 1.6, cx, 0.2, cz, 8, false);
+  P.cyl('neon_amber', 5.05, 5.05, 0.15, cx, 1.6, cz, 8, false);
+  // containment pillars
+  for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+    const px = cx + sx * 3.6, pz = cz + sz * 3.6;
+    P.boxB('metal', 0.8, H, 0.8, px, 1.8, pz);
+    P.box('neon_amber', 0.12, H - 2, 0.12, px - sx * 0.42, 2.8 + (H - 2) / 2, pz - sz * 0.42, 0, false);
+    blink(P, px, H + 2.1, pz);
+  }
+  // core: glowing plasma column inside glass
+  const plasma = r.chance(0.7) ? 'plasma' : 'plasmaB';
+  P.cyl(plasma, 1.1, 1.1, H - 1, cx, 1.8, cz, 12, false);
+  P.cyl('vat', 1.8, 1.8, H - 1, cx, 1.8, cz, 16, false);
+  for (let y = 4; y < H; y += 4) {
+    const t = new THREE.TorusGeometry(2.4, 0.18, 6, 24);
+    t.rotateX(PI / 2);
+    P.geo('metal', t, cx, y, cz);
+  }
+  P.cyl('metal', 4, 4, 1, cx, H + 0.8, cz, 8, false);
+  P.cyl(plasma, 4.05, 4.05, 0.12, cx, H + 1.4, cz, 8, false);
+  // side cooling stacks
+  P.cyl('concrete', 1.1, 1.4, 5, cx - 4.5, 0.2, cz + 4.5, 10, false);
+  P.cyl('dim_amber', 1.12, 1.12, 0.1, cx - 4.5, 5, cz + 4.5, 10, false);
+  // spinning containment field
+  const g = new THREE.Group();
+  const ring = new THREE.Mesh(torusGeo, plasma === 'plasma' ? MAT.holoM : MAT.holo);
+  ring.rotation.x = PI / 2 + 0.3;
+  const ring2 = new THREE.Mesh(torusGeo, MAT.holo);
+  ring2.rotation.x = PI / 2 - 0.3;
+  ring2.scale.setScalar(0.8);
+  g.add(ring, ring2);
+  g.position.set(cx, H * 0.55, cz);
+  anim.push({ obj: g, spin: 1.6, bob: 1.5 });
+  return { parts: P.merge(), anim, height: H + 2, rect: [cx - 5.2, cz - 5.2, cx + 5.2, cz + 5.2] };
+}
+
+// ---------------------------------------------------------------- data spire
+export function genDataspire(level, seed, cx, cz) {
+  const r = mulberry32(seed);
+  const P = new Parts();
+  const anim = [];
+  sidewalk(P, cx, cz);
+  const H = 30 + level * 20 + r.range(0, 12);
+  const w = r.range(6.5, 8);
+  P.boxB('winServer', w, H, w, cx, 0.2, cz);
+  ring(P, 'neon_green', w, w, H + 0.2, cx, cz);
+  ring(P, 'dim_green', w, w, H * 0.5, cx, cz, 0.1);
+  // corner cable bundles
+  for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+    const x = cx + sx * (w / 2 + 0.5), z = cz + sz * (w / 2 + 0.5);
+    P.cyl('cable', 0.35, 0.35, H, x, 0.2, z, 6, false);
+    P.cyl('dim_green', 0.38, 0.38, 0.12, x, H * 0.33, z, 6, false);
+    P.cyl('dim_green', 0.38, 0.38, 0.12, x, H * 0.66, z, 6, false);
+  }
+  // data streams pouring down two faces
+  const sw = w * 0.55;
+  P.plane('dataStream', sw, H * 0.9, cx, 0.2 + H * 0.45, cz + w / 2 + 0.1, 0);
+  P.plane('dataStream', sw, H * 0.9, cx + w / 2 + 0.1, 0.2 + H * 0.45, cz, PI / 2);
+  // cooling crown
+  P.boxB('roof', w, 0.3, w, cx, H + 0.2, cz);
+  for (const [sx, sz] of [[-1, -1], [1, 1], [1, -1], [-1, 1]]) {
+    P.cyl('metal', 1.1, 1.1, 1.2, cx + sx * w / 4, H + 0.5, cz + sz * w / 4, 10, false);
+    P.cyl('neon_green', 0.9, 0.9, 0.06, cx + sx * w / 4, H + 1.72, cz + sz * w / 4, 10, false);
+  }
+  const ah = r.range(6, 12);
+  P.cyl('metal', 0.05, 0.25, ah, cx, H + 0.5, cz, 6, false);
+  blink(P, cx, H + ah + 0.7, cz);
+  if (r.chance(0.5)) holoCrown(anim, cx, H + ah * 0.5, cz, false);
+  return { parts: P.merge(), anim, height: H + ah, rect: [cx - 5, cz - 5, cx + 5, cz + 5] };
+}
+
+// ---------------------------------------------------------------- drone hub
+const droneBody = new THREE.BoxGeometry(0.9, 0.25, 0.9);
+const droneRotor = new THREE.CylinderGeometry(0.42, 0.42, 0.04, 12);
+const droneLight = new THREE.BoxGeometry(0.16, 0.12, 0.16);
+function droneMesh() {
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(droneBody, MAT.metal));
+  for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+    const ro = new THREE.Mesh(droneRotor, MAT.dim_cyan);
+    ro.position.set(sx * 0.65, 0.12, sz * 0.65);
+    g.add(ro);
+  }
+  const l = new THREE.Mesh(droneLight, Math.random() < 0.5 ? MAT.blinkA : MAT.neon_green);
+  l.position.y = -0.18;
+  g.add(l);
+  return g;
+}
+export function genDronehub(level, seed, cx, cz) {
+  const r = mulberry32(seed);
+  const P = new Parts();
+  const anim = [];
+  sidewalk(P, cx, cz);
+  const H = 10 + level * 6 + r.range(0, 5);
+  const win = r.pick(['winB', 'winD', 'winCorp']);
+  P.boxB(win, 9.4, H, 9.4, cx, 0.2, cz);
+  ring(P, 'neon_cyan', 9.4, 9.4, H + 0.2, cx, cz);
+  bladeSign(P, r, cx, cz, 9.4, 9.4, 0.2, H);
+  // landing pad
+  const y = H + 0.2;
+  P.boxB('roof', 9.3, 0.3, 9.3, cx, y, cz);
+  P.cyl('concrete', 4.3, 4.3, 0.2, cx, y + 0.3, cz, 24, false);
+  P.cyl('neon_cyan', 4.35, 4.35, 0.06, cx, y + 0.5, cz, 24, false);
+  P.box('paint', 0.5, 0.04, 3, cx - 1, y + 0.52, cz, 0, false);
+  P.box('paint', 0.5, 0.04, 3, cx + 1, y + 0.52, cz, 0, false);
+  P.box('paint', 2, 0.04, 0.5, cx, y + 0.52, cz, 0, false);
+  // control mast
+  P.boxB('metal', 0.6, 7, 0.6, cx + 4.2, y, cz - 4.2);
+  P.box('glass', 1.6, 1.2, 1.6, cx + 4.2, y + 7.4, cz - 4.2, 0, false);
+  blink(P, cx + 4.2, y + 8.3, cz - 4.2);
+  // parked drone + orbiting swarm
+  const parked = droneMesh();
+  parked.position.set(cx, y + 0.8, cz);
+  parked.scale.setScalar(2.2);
+  anim.push({ obj: parked, spin: 0, bob: 0.05 });
+  const swarm = new THREE.Group();
+  const n = 2 + Math.min(level, 4);
+  for (let k = 0; k < n; k++) {
+    const d = droneMesh();
+    const a = (k / n) * PI * 2;
+    const rad = 7 + (k % 2) * 4;
+    d.position.set(Math.cos(a) * rad, (k % 3) * 3, Math.sin(a) * rad);
+    d.scale.setScalar(1.4);
+    swarm.add(d);
+  }
+  swarm.position.set(cx, y + 6, cz);
+  anim.push({ obj: swarm, spin: 0.7 + r() * 0.4, bob: 1 });
+  return { parts: P.merge(), anim, height: y + 12, rect: [cx - 5, cz - 5, cx + 5, cz + 5] };
+}
+
+// ---------------------------------------------------------------- chrome clinic (cybernetics)
+export function genClinic(level, seed, cx, cz) {
+  const r = mulberry32(seed);
+  const P = new Parts();
+  const anim = [];
+  sidewalk(P, cx, cz);
+  const H = 9 + level * 5 + r.range(0, 4);
+  P.boxB('winC', 8.8, H, 8, cx, 0.2, cz - 0.8);
+  ring(P, 'neon_pink', 8.8, 8, H + 0.2, cx, cz - 0.8);
+  // glowing glass storefront facing +z
+  P.box('glass', 7.6, 3, 0.1, cx, 1.9, cz + 3.25, 0, false);
+  P.box('neon_green', 7.8, 0.12, 0.2, cx, 3.5, cz + 3.3, 0, false);
+  // medical cross sign
+  P.box('neon_green', 0.5, 1.8, 0.2, cx - 3, 5.2, cz + 3.4, 0, false);
+  P.box('neon_green', 1.8, 0.5, 0.2, cx - 3, 5.2, cz + 3.4, 0, false);
+  bladeSign(P, r, cx, cz - 0.8, 8.8, 8, 0.2, H);
+  // augmentation vats on the sidewalk, each with a body silhouette inside
+  for (let k = 0; k < 3; k++) {
+    const x = cx - 2.4 + k * 2.4, z = cz + 4.6;
+    P.cyl('metal', 0.8, 0.8, 0.4, x, 0.2, z, 12, false);
+    P.cyl('metal', 0.8, 0.8, 0.3, x, 3.2, z, 12, false);
+    P.cyl('cable', 0.18, 0.22, 1.3, x, 0.7, z, 6, false);
+    P.cyl('cable', 0.24, 0.2, 1.1, x, 1.9, z, 6, false);
+    const head = new THREE.SphereGeometry(0.2, 6, 4);
+    P.geo('cable', head, x, 3.15 - 0.15, z);
+    P.box('neon_cyan', 0.3, 0.05, 0.1, x, 2.98, z + 0.17, 0, false); // optic implant glint
+    P.cyl('vat', 0.7, 0.7, 2.6, x, 0.6, z, 14, false);
+  }
+  // giant cybernetic arm sculpture on the roof: segmented, glowing joints
+  const y = H + 0.2;
+  P.boxB('roof', 8.7, 0.2, 7.9, cx, y, cz - 0.8);
+  const ax = cx - 1.5, az = cz - 1.5;
+  P.cyl('metal', 1.2, 1.5, 1.2, ax, y + 0.2, az, 10, false);
+  const upper = new THREE.BoxGeometry(0.9, 5, 0.9); upper.rotateZ(-0.35); P.geo('metal', upper, ax + 0.85, y + 3.7, az);
+  P.cyl('neon_cyan', 0.6, 0.6, 0.9, ax + 1.7, y + 5.8, az - 0.45, 12, false);
+  const fore = new THREE.BoxGeometry(0.8, 4, 0.8); fore.rotateZ(-1.1); P.geo('metal', fore, ax + 3.48, y + 6.7, az - 0.45);
+  const cuff = new THREE.BoxGeometry(0.95, 0.18, 0.95); cuff.rotateZ(-1.1); P.geo('neon_cyan', cuff, ax + 4.3, y + 7.1, az - 0.45);
+  P.box('metal', 0.9, 0.5, 1, ax + 5.3, y + 7.6, az - 0.45, 0, false);
+  for (let f = 0; f < 4; f++) P.boxB('metal', 0.16, 1.2, 0.16, ax + 5.65, y + 7.7, az - 0.85 + f * 0.27);
+  P.boxB('metal', 0.16, 0.8, 0.16, ax + 5.0, y + 7.7, az - 0.95);
+  // floating hologram of a cyber-head advertising augments
+  holoHead(anim, cx + 2, y + 6, cz + 1.5, 0.9);
+  return { parts: P.merge(), anim, height: y + 10, rect: [cx - 4.6, cz - 4.8, cx + 4.6, cz + 5.4] };
+}
+
+// ---------------------------------------------------------------- uplink array
+export function genUplink(level, seed, cx, cz) {
+  const r = mulberry32(seed);
+  const P = new Parts();
+  const anim = [];
+  sidewalk(P, cx, cz);
+  const H = 34 + level * 14 + r.range(0, 10);
+  P.boxB('winServer', 6, 5, 6, cx, 0.2, cz);
+  // tapered lattice: four legs + cross bracing
+  const legs = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+  const b0 = 4.2, b1 = 1.2;
+  for (const [sx, sz] of legs) {
+    const g = new THREE.CylinderGeometry(0.12, 0.2, H, 5);
+    const dx = (b1 - b0) * sx, dz = (b1 - b0) * sz;
+    g.applyMatrix4(new THREE.Matrix4().makeShear(0, 0, dx / H, dz / H, 0, 0));
+    P.geo('metal', g, cx + sx * (b0 + b1) / 2, 0.2 + H / 2, cz + sz * (b0 + b1) / 2);
+  }
+  for (let y = 6; y < H - 2; y += 5) {
+    const s = b0 + (b1 - b0) * (y / H);
+    P.box('metal', s * 2, 0.12, 0.12, cx, y, cz + s, 0, false);
+    P.box('metal', s * 2, 0.12, 0.12, cx, y, cz - s, 0, false);
+    P.box('metal', 0.12, 0.12, s * 2, cx + s, y, cz, 0, false);
+    P.box('metal', 0.12, 0.12, s * 2, cx - s, y, cz, 0, false);
+    if ((y / 5) % 3 < 1) ring(P, 'dim_violet', s * 2, s * 2, y, cx, cz, 0.06);
+  }
+  const top = H + 0.2;
+  P.cyl('metal', 1.4, 1.4, 1.2, cx, top, cz, 10, false);
+  dish(P, r, cx, top + 1.2, cz, 3.2);
+  dish(P, r, cx + 1.2, top - 6, cz, 1.6);
+  // the beam: a pulsing laser shot straight into the smog
+  P.cyl('laser', 0.35, 0.35, 420, cx, top + 3, cz, 8, false);
+  P.cyl('neon_violet', 0.6, 0.6, 0.4, cx, top + 2.8, cz, 10, false);
+  return { parts: P.merge(), anim, height: top + 6, rect: [cx - 4.5, cz - 4.5, cx + 4.5, cz + 4.5] };
+}
+
 export const GENERATORS = {
+  powercore: genPowercore,
+  dataspire: genDataspire,
+  dronehub: genDronehub,
+  clinic: genClinic,
+  uplink: genUplink,
   habitat: genHabitat,
   corp: genCorp,
   arcology: genArcology,

@@ -17,3 +17,25 @@ export function mulberry32(seed) {
 export function randSeed() {
   return (Math.random() * 0xffffffff) >>> 0;
 }
+
+// Stateless integer hash of up to 3 ints -> [0, 1). Used for infinite world layout.
+export function hash3(a, b, c = 0) {
+  let h = Math.imul(a | 0, 374761393) ^ Math.imul(b | 0, 668265263) ^ Math.imul(c | 0, 1442695041);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  h ^= h >>> 16;
+  h = Math.imul(h, 2246822519);
+  h ^= h >>> 13;
+  return (h >>> 0) / 4294967296;
+}
+export function hashInt(a, b, c = 0) {
+  return Math.floor(hash3(a, b, c) * 4294967296) >>> 0;
+}
+// Smooth 2D value noise in [0, 1].
+export function vnoise(seed, x, y) {
+  const xi = Math.floor(x), yi = Math.floor(y);
+  let fx = x - xi, fy = y - yi;
+  fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
+  const a = hash3(xi, yi, seed), b = hash3(xi + 1, yi, seed);
+  const c = hash3(xi, yi + 1, seed), d = hash3(xi + 1, yi + 1, seed);
+  return a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy;
+}
