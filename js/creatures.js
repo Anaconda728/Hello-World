@@ -161,22 +161,22 @@ function buildViper() {
 
 // ---------- species ----------
 export const SPECIES = {
-  deer: { name: 'Deer', build: buildDeer, hp: 10, walk: 1.8, run: 8.0, r: 0.5, stride: 5, skittish: 10, cap: 5, idle: 0.45, ai: 'grazer',
+  deer: { name: 'Deer', drops: [['meat', 3], ['hide', 2]],  build: buildDeer, hp: 10, walk: 1.8, run: 8.0, r: 0.5, stride: 5, skittish: 10, cap: 5, idle: 0.45, ai: 'grazer',
     spawn: (w, x, z, g) => g > WATER + 3 && g < 44 && w.forestAt(x, z) < 0.25 },
-  capybara: { name: 'Capybara', build: buildCapybara, hp: 8, walk: 1.0, run: 3.6, r: 0.5, stride: 9, skittish: 0, swims: true, cap: 5, idle: 0.6, ai: 'grazer',
+  capybara: { name: 'Capybara', drops: [['meat', 2], ['hide', 1]],  build: buildCapybara, hp: 8, walk: 1.0, run: 3.6, r: 0.5, stride: 9, skittish: 0, swims: true, cap: 5, idle: 0.6, ai: 'grazer',
     spawn: (w, x, z, g) => g > WATER + 0.2 && g < WATER + 5 },
-  flamingo: { name: 'Flamingo', build: buildFlamingo, hp: 5, walk: 0.9, run: 4.5, r: 0.35, stride: 5, skittish: 5, wades: true, cap: 5, idle: 0.65, ai: 'grazer',
+  flamingo: { name: 'Flamingo', drops: [['meat', 1], ['feather', 3]],  build: buildFlamingo, hp: 5, walk: 0.9, run: 4.5, r: 0.35, stride: 5, skittish: 5, wades: true, cap: 5, idle: 0.65, ai: 'grazer',
     spawn: (w, x, z, g) => g > WATER - 0.7 && g < WATER + 1.2 },
-  hedgehog: { name: 'Hedgehog', build: buildHedgehog, hp: 4, walk: 0.7, run: 0.7, r: 0.3, stride: 18, cap: 3, idle: 0.4, ai: 'hedgehog',
+  hedgehog: { name: 'Hedgehog', drops: [['meat', 1]],  build: buildHedgehog, hp: 4, walk: 0.7, run: 0.7, r: 0.3, stride: 18, cap: 3, idle: 0.4, ai: 'hedgehog',
     dmg: 1, cause: 'Pricked by a hedgehog',
     spawn: (w, x, z, g) => g > WATER + 2 && g < 46 && w.forestAt(x, z) > 0 },
-  jackal: { name: 'Jackal', build: buildJackal, hp: 8, walk: 2.2, run: 6.6, r: 0.35, stride: 7, cap: 5, biteCd: 1.5, idle: 0.3, ai: 'jackal', hostile: true, night: true,
+  jackal: { name: 'Jackal', drops: [['meat', 1], ['hide', 1]],  build: buildJackal, hp: 8, walk: 2.2, run: 6.6, r: 0.35, stride: 7, cap: 5, biteCd: 1.5, idle: 0.3, ai: 'jackal', hostile: true, night: true,
     dmg: 2, reach: 1.35, sight: 26, cause: 'Hunted down by jackals',
     spawn: (w, x, z, g) => g > WATER + 1 },
-  badger: { name: 'Honey badger', build: buildBadger, hp: 16, walk: 1.4, run: 5.4, r: 0.38, stride: 12, cap: 2, idle: 0.4, ai: 'badger', hostile: true,
+  badger: { name: 'Honey badger', drops: [['meat', 2], ['hide', 2]],  build: buildBadger, hp: 16, walk: 1.4, run: 5.4, r: 0.38, stride: 12, cap: 2, idle: 0.4, ai: 'badger', hostile: true,
     dmg: 3, reach: 1.2, sight: 7, cause: 'Mauled by a honey badger',
     spawn: (w, x, z, g) => g > WATER + 2 && g < 44 },
-  viper: { name: 'Viper', build: buildViper, hp: 4, walk: 0.8, run: 2.2, r: 0.3, stride: 6, cap: 4, idle: 0.8, ai: 'viper', hostile: true,
+  viper: { name: 'Viper', drops: [['meat', 1]],  build: buildViper, hp: 4, walk: 0.8, run: 2.2, r: 0.3, stride: 6, cap: 4, idle: 0.8, ai: 'viper', hostile: true,
     dmg: 4, reach: 2.1, sight: 3.4, cause: 'Bitten by a viper',
     spawn: (w, x, z, g) => g > WATER + 2 && g < 50 && w.forestAt(x, z) < 0.3 },
 };
@@ -215,6 +215,16 @@ export class Creatures {
     this.world = world;
     this.list = [];
     this.spawnT = 1;
+    this.onDeath = null;
+  }
+
+  // Loud noise (gunshot): grazers bolt, jackals scatter. Honey badgers don't care.
+  scare(pos, r) {
+    for (const c of this.list) {
+      if (c.dead || c.pos.distanceTo(pos) > r) continue;
+      if (!c.def.hostile) c.hurtT = Math.max(c.hurtT, 3);
+      else if (c.type === 'jackal' || c.type === 'viper') c.scaredT = 4;
+    }
   }
 
   roots() { return this.list.filter((c) => !c.dead).map((c) => c.root); }
@@ -281,7 +291,10 @@ export class Creatures {
     c.flash = 1;
     c.vx += dir.x * 6; c.vz += dir.z * 6; c.vy = 3.5;
     if (c.def.hostile) c.aggro = true;
-    if (c.hp <= 0) { c.dead = true; c.deadT = 0; }
+    if (c.hp <= 0) {
+      c.dead = true; c.deadT = 0;
+      if (this.onDeath) this.onDeath(c);
+    }
     return true;
   }
 
@@ -300,7 +313,7 @@ export class Creatures {
       const dx = p.x - c.pos.x, dz = p.z - c.pos.z, dist = Math.hypot(dx, dz);
       const dy = p.y - c.pos.y;
       if (dist > 95 || !this.world.getChunk(Math.floor(c.pos.x / 32), Math.floor(c.pos.z / 32))) { this.remove(c); continue; }
-      c.hurtT -= dt; c.atkCd -= dt; c.flash = Math.max(0, c.flash - dt * 4);
+      c.hurtT -= dt; c.atkCd -= dt; c.flash = Math.max(0, c.flash - dt * 4); c.scaredT = (c.scaredT || 0) - dt;
       c.near = dist < 40;
       this.think(c, dt, ctx, dx, dz, dist, Math.abs(dy) < 2.2);
       if (c.removed) { this.remove(c); continue; }
@@ -361,7 +374,7 @@ export class Creatures {
         break;
       }
       case 'jackal': {
-        if (c.hp <= 3) { flee(); break; }
+        if (c.hp <= 3 || c.scaredT > 0 || (ctx.fireNear && ctx.fireNear(c.pos, 9))) { c.aggro = false; flee(); break; }
         if (!ctx.night && c.hurtT <= 0) { c.aggro = false; flee(); if (dist > 30) c.removed = true; break; }
         if (dist < d.sight || c.aggro) { c.aggro = dist < d.sight * 1.6; chase(); }
         else wander();
@@ -374,7 +387,7 @@ export class Creatures {
         break;
       }
       case 'viper': {
-        if (c.hurtT > 0) { c.state = 'slither'; flee(); c.wantSpeed = d.run; break; }
+        if (c.hurtT > 0 || c.scaredT > 0) { c.state = 'slither'; flee(); c.wantSpeed = d.run; break; }
         c.wantSpeed = 0;
         if (c.state === 'rear') {
           c.heading += angDiff(c.heading, toward) * Math.min(1, dt * 8);

@@ -19,7 +19,10 @@
     <div id="crosshair"></div>
     <div id="toast"></div>
     <div id="bottom">
-      <div id="health"><div id="hpfill"></div><span id="hptext"></span></div>
+      <div id="bars">
+        <div id="health" class="bar"><div id="hpfill" class="fill"></div><span id="hptext"></span></div>
+        <div id="food" class="bar"><div id="foodfill" class="fill"></div><span id="foodtext"></span></div>
+      </div>
       <div id="brush"></div>
       <div id="hotbar"></div>
     </div>
@@ -36,13 +39,32 @@
         <div><b>WASD</b> move</div><div><b>Mouse</b> look</div>
         <div><b>Space</b> jump / swim</div><div><b>Shift</b> sprint</div>
         <div><b>Left click</b> dig / chop / attack</div><div><b>Right click</b> build</div>
-        <div><b>1–6 / wheel</b> material</div><div><b>Q / E</b> brush size</div>
+        <div><b>1–9 / wheel</b> hotbar</div><div><b>Q / E</b> brush size</div>
+        <div><b>Tab</b> crafting</div><div><b>R</b> eat · <b>H</b> bandage</div>
         <div><b>C</b> creative mode</div><div><b>F</b> fly (creative)</div>
         <div><b>Esc</b> pause</div>
       </div>
-      <p class="hint">Digging gives you materials, and building uses them. Chop trees for timber. Careful when digging into cliffs, because they can collapse. Jackals hunt at night, and vipers hide in the grass. Your world saves in this browser.</p>
+      <p class="hint">Dig and chop for materials, hunt for meat and hide, and craft your way to a rifle. Watch your food bar. Cliffs can collapse, jackals hunt at night (they fear campfires), and vipers hide in the grass. Your world saves in this browser.</p>
       <button id="newworld" class="secondary">New world</button>
       <p class="hint small">You need a keyboard and mouse to play.</p>
+    </div>
+  </div>
+
+  <div id="craft" class="hidden">
+    <div class="panel wide">
+      <div class="craft-head">
+        <h2>Crafting</h2>
+        <span id="stations"></span>
+        <button id="craftclose" class="secondary">Close (Tab)</button>
+      </div>
+      <div id="recipes"></div>
+      <h3>Inventory</h3>
+      <div id="invlist"></div>
+      <div class="craft-actions">
+        <button id="eatbtn" class="secondary">Eat (R)</button>
+        <button id="bandbtn" class="secondary">Use bandage (H)</button>
+      </div>
+      <p class="hint">Where to find things: <b>coal</b> and <b>iron ore</b> are in the stone underground, so dig into hillsides and cliffs. <b>Sulfur</b> (yellow) lies deeper, below about height 26. <b>Clay</b> (blue-grey) is under the soil around lakes and on lake beds. <b>Timber</b> comes from trees. <b>Meat</b>, <b>hide</b> and <b>feathers</b> come from animals.</p>
     </div>
   </div>
 

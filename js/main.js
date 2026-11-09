@@ -1,9 +1,19 @@
 import * as THREE from 'three';
-import { CS, H, WATER, MAT, MAT_INFO, HOTBAR } from './constants.js';
+import { CS, H, WATER, MAT, MAT_INFO } from './constants.js';
 import { World } from './world.js';
 import { Player, EYE } from './player.js';
 import { Creatures } from './creatures.js';
 import { Hazards } from './hazards.js';
+import { ITEMS, RECIPES, Pickups } from './items.js';
+import { Structures } from './structures.js';
+import { Rifle } from './gun.js';
+
+// Hotbar: building materials, then the rifle and placeable stations.
+const HOTBAR = [
+  { m: MAT.GRASS }, { m: MAT.DIRT }, { m: MAT.STONE }, { m: MAT.SAND }, { m: MAT.WOOD }, { m: MAT.CLAY },
+  { i: 'rifle' }, { i: 'campfire' }, { i: 'forge' },
+];
+const RIFLE_RANGE = 90, RIFLE_DAMAGE = 14, RELOAD_TIME = 1.6;
 
 const SAVE_KEY = 'driftland-save-v1';
 const RENDER_RADIUS = 4;
@@ -27,6 +37,7 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color();
 const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.1, 1200);
 camera.rotation.order = 'YXZ';
+scene.add(camera);   // so the first-person rifle (a camera child) renders
 const fogFar = RENDER_RADIUS * CS * 0.95;
 scene.fog = new THREE.Fog(0x87c5f0, fogFar * 0.4, fogFar);
 
@@ -100,35 +111,63 @@ if (save?.player) {
 
 const creatures = new Creatures(scene, world);
 const hazards = new Hazards(scene, world);
+const pickups = new Pickups(scene, world);
+const structures = new Structures(scene, save?.structures);
+const rifle = new Rifle(camera, scene);
 player.health = save?.health ?? player.maxHealth;
+let hunger = save?.hunger ?? 20;
+const MAX_HUNGER = 20;
 
-const inv = save?.inv?.length === 8 ? save.inv.slice() : new Array(8).fill(0);
+const inv = new Array(MAT_INFO.length).fill(0);
+(save?.inv || []).forEach((v, i) => { if (i < inv.length) inv[i] = v; });
+const items = Object.fromEntries(Object.keys(ITEMS).map((k) => [k, save?.items?.[k] || 0]));
+let aiming = false;
+
+creatures.onDeath = (c) => {
+  for (const [id, n] of c.def.drops || []) for (let k = 0; k < n; k++) pickups.spawn(id, 1, c.pos);
+};
 let creative = !!save?.creative;
 let time = save?.time ?? 0.3;      // in days; 0.25 = sunrise
 let sel = 0;
 let brush = 2;
 let locked = false;
 let digging = false, building = false, cooldown = 0;
-let dead = false, sinceHurt = 99, regenT = 0;
+let dead = false, sinceHurt = 99, regenT = 0, starveT = 0;
+let craftOpen = false;
 
 // ---------- HUD ----------
 const $ = (id) => document.getElementById(id);
 const hotbarEl = $('hotbar'), infoEl = $('info'), brushEl = $('brush'), toastEl = $('toast');
 const menu = $('menu'), playBtn = $('play'), loadingEl = $('loading');
 const hpFill = $('hpfill'), hpText = $('hptext'), hurtEl = $('hurt'), deathEl = $('death');
-const slots = HOTBAR.map((m, i) => {
+const foodFill = $('foodfill'), foodText = $('foodtext'), craftEl = $('craft');
+const hex = (c) => '#' + c.toString(16).padStart(6, '0');
+const slotInfo = (s) => (s.m !== undefined ? MAT_INFO[s.m] : ITEMS[s.i]);
+const slots = HOTBAR.map((s, i) => {
   const el = document.createElement('div');
-  el.className = 'slot';
-  el.innerHTML = `<span class="key">${i + 1}</span><span class="swatch" style="background:#${MAT_INFO[m].color.toString(16).padStart(6, '0')}"></span><span class="name">${MAT_INFO[m].name}</span><span class="count"></span>`;
+  el.className = 'slot' + (s.i ? ' item' : '');
+  const info = slotInfo(s);
+  el.innerHTML = `<span class="key">${i + 1}</span><span class="swatch" style="background:${hex(info.color)}"></span><span class="name">${info.name}</span><span class="count"></span>`;
   hotbarEl.appendChild(el);
   return el;
 });
+const selected = () => HOTBAR[sel];
+const hasRifle = () => creative || items.rifle > 0;
 function updateHotbar() {
   slots.forEach((el, i) => {
+    const s = HOTBAR[i];
     el.classList.toggle('active', i === sel);
-    el.querySelector('.count').textContent = creative ? '∞' : inv[HOTBAR[i]];
+    let txt;
+    if (s.m !== undefined) txt = creative ? '∞' : inv[s.m];
+    else if (s.i === 'rifle') txt = hasRifle() ? `${creative ? '∞' : items.ammo} rds` : '—';
+    else txt = creative ? '∞' : items[s.i];
+    el.querySelector('.count').textContent = txt;
+    el.classList.toggle('empty', s.i !== undefined && !creative && (s.i === 'rifle' ? !items.rifle : !items[s.i]));
   });
-  brushEl.textContent = `Brush ${brush.toFixed(1)}  ·  Q / E to resize`;
+  const s = selected();
+  brushEl.textContent = s.i === 'rifle' ? 'Left click fire  ·  hold right click to aim'
+    : s.i ? 'Right click to place  ·  left click a station to pick it up'
+    : `Brush ${brush.toFixed(1)}  ·  Q / E to resize  ·  Tab to craft`;
 }
 let toastTimer = 0;
 function toast(msg) {
@@ -146,6 +185,92 @@ function updateHealth() {
   hpText.textContent = creative ? 'Creative' : `${Math.ceil(Math.max(0, player.health))} / ${player.maxHealth}`;
 }
 updateHealth();
+
+function updateFood() {
+  const f = Math.max(0, hunger) / MAX_HUNGER;
+  foodFill.style.width = `${f * 100}%`;
+  foodText.textContent = creative ? 'Creative' : `Food ${Math.ceil(hunger)} / ${MAX_HUNGER}`;
+}
+updateFood();
+
+function eat() {
+  const id = items.cooked > 0 ? 'cooked' : items.meat > 0 ? 'meat' : null;
+  if (!id) { toast('Nothing to eat. Hunt animals for meat.'); return; }
+  if (hunger >= MAX_HUNGER - 0.5) { toast("You're not hungry"); return; }
+  items[id]--;
+  hunger = Math.min(MAX_HUNGER, hunger + ITEMS[id].food);
+  toast(`Ate ${ITEMS[id].name.toLowerCase()}`);
+  updateFood(); updateHotbar(); if (craftOpen) renderCraft();
+}
+function useBandage() {
+  if (items.bandage <= 0) { toast('No bandages. Craft them from hide and feathers.'); return; }
+  if (player.health >= player.maxHealth) { toast('Already at full health'); return; }
+  items.bandage--;
+  player.health = Math.min(player.maxHealth, player.health + 8);
+  toast('Bandaged up');
+  updateHealth(); if (craftOpen) renderCraft();
+}
+
+// ---------- crafting ----------
+const stationOk = (st) => !st || creative ||
+  structures.near(st === 'fire' ? ['campfire', 'forge'] : ['forge'], player.pos, 4.5);
+const haveCount = ([k, id]) => (k === 'm' ? inv[id] : items[id]);
+const needName = ([k, id]) => (k === 'm' ? MAT_INFO[id].name : ITEMS[id].name);
+const canCraft = (r) => stationOk(r.station) && (creative || r.need.every((n) => haveCount(n) >= n[2]));
+function craft(r, times = 1) {
+  let made = 0;
+  for (let t = 0; t < times && canCraft(r); t++) {
+    if (!creative) for (const [k, id, n] of r.need) { if (k === 'm') inv[id] -= n; else items[id] -= n; }
+    items[r.out] += r.n;
+    made += r.n;
+  }
+  if (made) toast(`Crafted ${made} × ${ITEMS[r.out].name}`);
+  updateHotbar(); renderCraft();
+}
+function renderCraft() {
+  const near = [];
+  if (structures.near(['campfire'], player.pos, 4.5)) near.push('campfire');
+  if (structures.near(['forge'], player.pos, 4.5)) near.push('forge');
+  $('stations').textContent = near.length ? `Near: ${near.join(', ')}` : 'No station nearby';
+  const list = $('recipes');
+  list.innerHTML = '';
+  for (const r of RECIPES) {
+    const ok = canCraft(r);
+    const card = document.createElement('div');
+    card.className = 'recipe' + (ok ? ' ok' : '');
+    const needs = r.need.map((n) => {
+      const have = haveCount(n), enough = creative || have >= n[2];
+      return `<span class="${enough ? 'have' : 'miss'}">${n[2]} ${needName(n)} <small>(${creative ? '∞' : have})</small></span>`;
+    }).join('');
+    const st = r.station ? `<div class="st ${stationOk(r.station) ? 'have' : 'miss'}">Needs ${r.station === 'fire' ? 'campfire or forge' : 'forge'} nearby</div>` : '';
+    card.innerHTML = `<div class="out"><span class="swatch" style="background:${hex(ITEMS[r.out].color)}"></span><b>${ITEMS[r.out].name}</b>${r.n > 1 ? ` ×${r.n}` : ''} <small class="owned">have ${items[r.out]}</small></div>
+      <div class="info">${r.info}</div><div class="needs">${needs}</div>${st}`;
+    const btn = document.createElement('button');
+    btn.textContent = 'Craft';
+    btn.disabled = !ok;
+    btn.title = 'Shift-click to craft up to 10';
+    btn.addEventListener('click', (e) => craft(r, e.shiftKey ? 10 : 1));
+    card.appendChild(btn);
+    list.appendChild(card);
+  }
+  const invList = $('invlist');
+  const entries = [];
+  inv.forEach((n, i) => { if (n > 0 && MAT_INFO[i]) entries.push([MAT_INFO[i], n]); });
+  for (const [k, n] of Object.entries(items)) if (n > 0) entries.push([ITEMS[k], n]);
+  invList.innerHTML = entries.length
+    ? entries.map(([info, n]) => `<span class="inv"><span class="swatch" style="background:${hex(info.color)}"></span>${info.name} <b>${n}</b></span>`).join('')
+    : '<span class="hint">Empty. Dig, chop and hunt to gather resources.</span>';
+}
+function openCraft() { craftOpen = true; renderCraft(); document.exitPointerLock(); }
+function closeCraft() {
+  craftOpen = false;
+  craftEl.classList.add('hidden');
+  const r = canvas.requestPointerLock();
+  if (r && r.catch) r.catch(() => menu.classList.remove('hidden'));
+}
+$('craftclose').addEventListener('click', closeCraft);
+$('eatbtn').addEventListener('click', eat);
+$('bandbtn').addEventListener('click', useBandage);
 
 // ---------- health ----------
 const knock = new THREE.Vector3();
@@ -173,6 +298,8 @@ function damage(amount, cause, from) {
 function respawn() {
   dead = false;
   player.health = player.maxHealth;
+  hunger = Math.max(hunger, 12);
+  updateFood();
   player.pos.copy(spawn);
   player.vel.set(0, 0, 0);
   player.fallImpact = 0;
@@ -185,7 +312,8 @@ let saveWarned = false;
 function saveGame() {
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify({
-      v: 1, seed, ops: world.ops, removedTrees: [...world.removedTrees], inv, creative, time, health: player.health,
+      v: 1, seed, ops: world.ops, removedTrees: [...world.removedTrees], inv, items, creative, time, health: player.health, hunger,
+      structures: structures.serialize(),
       player: { x: player.pos.x, y: player.pos.y, z: player.pos.z, yaw: player.yaw, pitch: player.pitch },
     }));
   } catch {
@@ -198,8 +326,17 @@ addEventListener('beforeunload', saveGame);
 // ---------- input ----------
 const keys = new Set();
 addEventListener('keydown', (e) => {
+  if (craftOpen && !locked) {
+    if (e.code === 'Tab' || e.code === 'Escape') { e.preventDefault(); if (e.code === 'Tab') closeCraft(); else { craftOpen = false; craftEl.classList.add('hidden'); menu.classList.remove('hidden'); } }
+    else if (e.code === 'KeyR') eat();
+    else if (e.code === 'KeyH') useBandage();
+    return;
+  }
   if (!locked) return;
   keys.add(e.code);
+  if (e.code === 'Tab') { e.preventDefault(); openCraft(); return; }
+  if (e.code === 'KeyR') eat();
+  if (e.code === 'KeyH') useBandage();
   if (e.code.startsWith('Digit')) {
     const n = +e.code.slice(5) - 1;
     if (n >= 0 && n < HOTBAR.length) { sel = n; updateHotbar(); }
@@ -211,6 +348,7 @@ addEventListener('keydown', (e) => {
     toast(creative ? 'Creative mode: unlimited materials, no damage, F to fly' : 'Survival mode');
     updateHotbar();
     updateHealth();
+    updateFood();
   } else if (e.code === 'KeyF') {
     if (creative) { player.flying = !player.flying; toast(player.flying ? 'Flying' : 'Walking'); }
     else toast('Flying needs creative mode (C)');
@@ -232,9 +370,11 @@ $('newworld').addEventListener('click', () => {
 });
 document.addEventListener('pointerlockchange', () => {
   locked = document.pointerLockElement === canvas;
-  menu.classList.toggle('hidden', locked);
+  menu.classList.toggle('hidden', locked || craftOpen);
+  craftEl.classList.toggle('hidden', locked || !craftOpen);
+  if (locked) craftOpen = false;
   if (!locked) {
-    keys.clear(); digging = building = false;
+    keys.clear(); digging = building = aiming = false;
     if (!dead) playBtn.textContent = 'Resume';
     saveGame();
   }
@@ -246,13 +386,15 @@ document.addEventListener('mousemove', (e) => {
 });
 document.addEventListener('mousedown', (e) => {
   if (!locked) return;
-  if (e.button === 0) digging = true;
-  if (e.button === 2) building = true;
-  cooldown = 0;
+  if (e.button === 0) { digging = true; cooldown = 0; }
+  if (e.button === 2) {
+    if (selected().i === 'rifle') aiming = true;
+    else { building = true; cooldown = 0; }
+  }
 });
 document.addEventListener('mouseup', (e) => {
   if (e.button === 0) digging = false;
-  if (e.button === 2) building = false;
+  if (e.button === 2) { building = false; aiming = false; }
 });
 document.addEventListener('contextmenu', (e) => e.preventDefault());
 addEventListener('wheel', (e) => {
@@ -287,7 +429,7 @@ function updateTarget() {
     if (c.mesh) objs.push(c.mesh);
     objs.push(...c.treeMeshes);
   }
-  objs.push(...creatures.roots());
+  objs.push(...creatures.roots(), ...structures.roots());
   camera.getWorldDirection(dir);
   raycaster.set(camera.position, dir);
   const hit = raycaster.intersectObjects(objs, true)[0];
@@ -295,9 +437,10 @@ function updateTarget() {
   highlight.visible = false;
   if (!hit) return;
   let o = hit.object;
-  while (o && !o.userData.creature) o = o.parent;
+  while (o && !o.userData.creature && !o.userData.structure) o = o.parent;
   if (o) {
-    if (hit.distance < 3.6) target = { creature: o.userData.creature, point: hit.point };
+    if (o.userData.creature && hit.distance < 3.6) target = { creature: o.userData.creature, point: hit.point };
+    if (o.userData.structure && hit.distance < 4.5) target = { structure: o.userData.structure, point: hit.point };
     return;
   }
   if (hit.object.userData.kind === 'tree') {
@@ -327,6 +470,13 @@ function doDig() {
     cooldown = 0.4;
     return;
   }
+  if (target.structure) {
+    items[target.structure.type]++;
+    structures.remove(target.structure);
+    toast(`Picked up ${ITEMS[target.structure.type].name.toLowerCase()}`);
+    updateHotbar();
+    return;
+  }
   if (target.tree) {
     world.removeTree(target.tree);
     inv[MAT.WOOD] += 6;
@@ -336,14 +486,69 @@ function doDig() {
   }
   const p = target.point.clone().addScaledVector(target.normal, -brush * 0.3);
   const counts = world.edit(0, p.x, p.y, p.z, brush, 0);
-  for (let i = 1; i < 7; i++) inv[i] += counts[i];
+  const got = [];
+  for (let i = 1; i < inv.length; i++) {
+    if (i === MAT.BEDROCK || !counts[i]) continue;
+    inv[i] += counts[i];
+    if (i >= MAT.COAL && i !== MAT.CLAY) got.push(`+${counts[i]} ${MAT_INFO[i].name}`);
+  }
+  if (got.length) toast(got.join('  '));
   updateHotbar();
   hazards.onDig(target.point, target.normal, brush, ctx);
 }
 
+function shoot() {
+  if (!hasRifle()) { toast('You have no rifle. Craft one at a forge (Tab).'); return; }
+  if (rifle.reload > 0) return;
+  if (!creative && items.ammo <= 0) { toast('Out of cartridges'); cooldown = 0.6; return; }
+  if (!creative) items.ammo--;
+  const objs = [...creatures.roots(), ...structures.roots()];
+  const pcx = Math.floor(player.pos.x / CS), pcz = Math.floor(player.pos.z / CS);
+  for (let dx = -3; dx <= 3; dx++) for (let dz = -3; dz <= 3; dz++) {
+    const c = world.getChunk(pcx + dx, pcz + dz);
+    if (!c) continue;
+    if (c.mesh) objs.push(c.mesh);
+    objs.push(...c.treeMeshes);
+  }
+  camera.getWorldDirection(dir);
+  // A little spread when firing from the hip.
+  if (!aiming) dir.add(tmpV.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(0.04)).normalize();
+  raycaster.far = RIFLE_RANGE;
+  raycaster.set(camera.position, dir);
+  const hit = raycaster.intersectObjects(objs, true)[0];
+  raycaster.far = REACH;
+  const end = hit ? hit.point : camera.position.clone().addScaledVector(dir, RIFLE_RANGE);
+  rifle.shoot(end);
+  rifle.reload = RELOAD_TIME;
+  player.pitch = Math.min(1.55, player.pitch + (aiming ? 0.02 : 0.04));
+  if (hit) {
+    let o = hit.object;
+    while (o && !o.userData.creature) o = o.parent;
+    if (o) creatures.hit(o.userData.creature, RIFLE_DAMAGE, dir, ctx);
+    else hazards.puff(hit.point, 0.25);
+  }
+  creatures.scare(player.pos, 45);
+  updateHotbar();
+}
+
+function placeStructure(type) {
+  if (!target || !target.normal) return;
+  if (!creative && items[type] <= 0) { toast(`You have no ${ITEMS[type].name.toLowerCase()}. Craft one (Tab).`); return; }
+  if (target.normal.y < 0.6) { toast('Needs flatter ground'); return; }
+  const p = target.point;
+  if (Math.hypot(p.x - player.pos.x, p.z - player.pos.z) < 1.2) { toast('Too close — step back'); return; }
+  if (structures.list.some((s) => Math.hypot(s.x - p.x, s.z - p.z) < 1.6)) { toast('Too close to another station'); return; }
+  structures.add(type, p.x, p.y - 0.05, p.z, player.yaw + Math.PI);
+  if (!creative) items[type]--;
+  toast(`Placed ${ITEMS[type].name.toLowerCase()}`);
+  updateHotbar();
+}
+
 function doBuild() {
-  if (!target || target.tree || target.creature) return;
-  const mat = HOTBAR[sel];
+  if (!target || target.tree || target.creature || target.structure) return;
+  const s = selected();
+  if (s.i) { if (s.i !== 'rifle') placeStructure(s.i); return; }
+  const mat = s.m;
   if (!creative && inv[mat] <= 0) { toast(`No ${MAT_INFO[mat].name} left — dig some up first`); return; }
   const p = target.point.clone().addScaledVector(target.normal, brush * 0.75);
   if (p.y + brush > H - 1) { toast('Too high to build here'); return; }
@@ -420,7 +625,14 @@ function updateClouds(dt) {
 const ctx = {
   player, keys, creatures, toast, damage,
   get night() { return sunDir.y < -0.05; },
+  fireNear: (pos, r) => structures.near(['campfire', 'forge'], pos, r),
 };
+function giveItem(id, n) {
+  items[id] += n;
+  toast(`+${n} ${ITEMS[id].name}`);
+  updateHotbar();
+  if (craftOpen) renderCraft();
+}
 let last = performance.now(), hudTimer = 0, ready = false;
 function pad2(n) { return String(n).padStart(2, '0'); }
 
@@ -444,10 +656,28 @@ function frame(now) {
     player.fallImpact = 0;
     creatures.update(dt, ctx);
     hazards.update(dt, ctx);
+    pickups.update(dt, player.pos, giveItem);
     sinceHurt += dt;
-    if (sinceHurt > 6 && player.health < player.maxHealth && !dead) {
+    // Hunger drains faster when sprinting or swimming.
+    if (!creative) {
+      const moving = keys.has('KeyW') || keys.has('KeyA') || keys.has('KeyS') || keys.has('KeyD');
+      const sprint = moving && (keys.has('ShiftLeft') || keys.has('ShiftRight'));
+      const prev = Math.ceil(hunger);
+      hunger = Math.max(0, hunger - dt * (1 / 45) * (sprint ? 3 : player.inWater ? 2 : 1));
+      if (Math.ceil(hunger) !== prev) updateFood();
+      if (hunger <= 0) {
+        starveT += dt;
+        if (starveT > 4) { starveT = 0; damage(1, 'Starved'); }
+      }
+    }
+    if (sinceHurt > 6 && player.health < player.maxHealth && !dead && hunger >= 12) {
       regenT += dt;
-      if (regenT > 3) { regenT = 0; player.health = Math.min(player.maxHealth, player.health + 1); updateHealth(); }
+      if (regenT > 3) {
+        regenT = 0;
+        player.health = Math.min(player.maxHealth, player.health + 1);
+        if (!creative) hunger = Math.max(0, hunger - 0.4);
+        updateHealth(); updateFood();
+      }
     }
   }
   camera.position.set(player.pos.x, player.pos.y + EYE, player.pos.z);
@@ -459,12 +689,21 @@ function frame(now) {
   }
   camera.rotation.set(player.pitch, player.yaw, 0);
 
+  const rifleOut = selected().i === 'rifle' && hasRifle();
+  rifle.root.visible = rifleOut;
+  rifle.update(dt, aiming && rifleOut);
+  const fov = aiming && rifleOut ? 32 : 72;
+  if (Math.abs(camera.fov - fov) > 0.1) { camera.fov += (fov - camera.fov) * Math.min(1, dt * 12); camera.updateProjectionMatrix(); }
+  structures.update(dt, player.pos, sunDir.y < -0.05);
+
   if (locked && ready) {
     updateTarget();
+    if (selected().i) highlight.visible = false;
     cooldown -= dt;
     if (cooldown <= 0 && (digging || building)) {
       cooldown = 0.25;
-      if (digging) doDig(); else doBuild();
+      if (digging && selected().i === 'rifle') { shoot(); digging = false; }
+      else if (digging) doDig(); else doBuild();
     }
   } else {
     highlight.visible = false;
@@ -485,4 +724,5 @@ function frame(now) {
 requestAnimationFrame(frame);
 
 // Handle for debugging from the console.
-window.driftland = { world, player, inv, scene, camera, creatures, hazards, ctx, get target() { return target; }, doDig, doBuild, setTime: (t) => { time = t; } };
+window.driftland = { world, player, inv, items, scene, camera, creatures, hazards, pickups, structures, rifle, ctx,
+  craft, RECIPES, shoot, eat, openCraft, renderCraft, select: (i) => { sel = i; updateHotbar(); }, get hunger() { return hunger; }, get target() { return target; }, doDig, doBuild, setTime: (t) => { time = t; } };

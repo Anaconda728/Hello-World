@@ -1,6 +1,6 @@
 // Terrain generation, chunk streaming, sculpting edits and trees.
 import * as THREE from 'three';
-import { CS, H, SY, WATER, MAT, idx, ckey } from './constants.js';
+import { CS, H, SY, WATER, MAT, MAT_INFO, idx, ckey } from './constants.js';
 import { Noise, makeRng } from './noise.js';
 import { buildChunkGeometry } from './mesher.js';
 
@@ -14,6 +14,8 @@ export class World {
     this.radius = radius;
     this.noise = new Noise(seed);
     this.caveNoise = new Noise(seed ^ 0x5bd1e995);
+    this.oreNoise = new Noise(seed ^ 0x27d4eb2f);
+    this.oreNoise2 = new Noise(seed ^ 0x165667b1);
     this.chunks = new Map();
     this.ops = save?.ops ? save.ops.slice() : [];
     this.removedTrees = new Set(save?.removedTrees || []);
@@ -70,9 +72,12 @@ export class World {
 
   fillColumn(dens, mats, base, wx, wz) {
     const h = this.heightAt(wx, wz);
-    const top = this.topMat(h, wx, wz);
-    const sub = top === MAT.SAND ? MAT.SAND : top === MAT.SNOW ? MAT.STONE : MAT.DIRT;
-    const cn = this.caveNoise;
+    let top = this.topMat(h, wx, wz);
+    const clayZone = h < WATER + 5 && this.noise.noise2(wx * 0.04 + 77, wz * 0.04 - 33) > -0.1;
+    if (clayZone && h < WATER + 0.3) top = MAT.CLAY;               // clay lake beds
+    const sub = clayZone && top !== MAT.SNOW ? MAT.CLAY
+      : top === MAT.SAND ? MAT.SAND : top === MAT.SNOW ? MAT.STONE : MAT.DIRT;
+    const cn = this.caveNoise, on = this.oreNoise, on2 = this.oreNoise2;
     for (let y = 0; y <= H; y++) {
       let d, m;
       if (y <= 1) { d = 6; m = MAT.BEDROCK; }
@@ -85,6 +90,12 @@ export class World {
         if (d > 6) d = 6; else if (d < -6) d = -6;
         const depth = h - y;
         m = depth < 1.4 ? top : depth < 4.5 ? sub : MAT.STONE;
+        if (m === MAT.STONE) {
+          const o = on.noise3(wx * 0.1, y * 0.12, wz * 0.1);
+          if (o > 0.4) m = MAT.COAL;
+          else if (o < -0.42 && y < 34) m = MAT.IRON;
+          else if (y < 26 && on2.noise3(wx * 0.13 + 40, y * 0.13, wz * 0.13) > 0.45) m = MAT.SULFUR;
+        }
       }
       dens[base + y] = d;
       mats[base + y] = m;
@@ -202,7 +213,7 @@ export class World {
   edit(type, x, y, z, r, mat) {
     const op = [type, round2(x), round2(y), round2(z), r, mat];
     this.ops.push(op);
-    const counts = new Array(8).fill(0);
+    const counts = new Array(MAT_INFO.length).fill(0);
     const m = r + 3;
     const cx0 = Math.floor((op[1] - m) / CS), cx1 = Math.floor((op[1] + m) / CS);
     const cz0 = Math.floor((op[3] - m) / CS), cz1 = Math.floor((op[3] + m) / CS);

@@ -20,9 +20,11 @@ You can also turn on **GitHub Pages** for this repository (Settings → Pages �
 | WASD / mouse | Move / look |
 | Space | Jump, or swim up in water |
 | Shift | Sprint |
-| Left click (hold) | Dig terrain / chop a tree / attack an animal |
-| Right click (hold) | Build with the selected material |
-| 1–6 / mouse wheel | Choose material |
+| Left click (hold) | Dig terrain / chop a tree / attack an animal / fire the rifle / pick up a station |
+| Right click (hold) | Build with the selected material / place a station / aim the rifle |
+| 1–9 / mouse wheel | Choose a hotbar slot (materials, rifle, campfire, forge) |
+| Tab | Open crafting |
+| R / H | Eat / use a bandage |
 | Q / E | Shrink / grow the brush |
 | C | Switch between survival and creative mode |
 | F | Fly (creative only) |
@@ -43,6 +45,22 @@ You can also turn on **GitHub Pages** for this repository (Settings → Pages �
   - *Honey badgers* are rare and tough. They charge if you get close.
   - *Vipers* hide in the grass. Watch for one rearing up just before it strikes.
 - **Unstable cliffs.** Digging into a steep face or under an overhang *sometimes* makes it collapse. The ground rumbles first, then a slab breaks off and tumbles down as boulders. Boulders hurt anything they hit, then settle back into the terrain.
+- **Resources underground.** Coal and iron ore run through the stone, yellow sulfur lies deeper (below about height 26), and blue-grey clay sits around lakes.
+- **Animal drops.** Animals drop meat, hide and feathers, which drift toward you when you get close.
+- **Food and hunger.** Your food bar empties over time, and faster when sprinting or swimming. Eat with R: cooked meat fills 8 and raw meat fills 3. Health only comes back when you're well fed, and at zero food you start starving.
+- **Crafting (Tab).** Two stations you can place:
+  - *Campfire* (timber + stone): cook food on it. Jackals won't come near.
+  - *Forge* (stone + clay + timber): smelts iron and makes metal goods.
+
+  | Recipe | Ingredients | Station |
+  | --- | --- | --- |
+  | Cooked meat | raw meat + timber | campfire / forge |
+  | Bandage (heals 8) | hide + 2 feathers | – |
+  | Iron ingot | 8 iron ore + 3 coal | forge |
+  | Gunpowder ×2 | 3 coal + 2 sulfur | – |
+  | Cartridges ×6 | iron ingot + 2 gunpowder | forge |
+  | Rifle | 5 iron ingots + 12 timber + 2 hide | forge |
+- **Rifle.** Each shot uses one cartridge, and reloading takes 1.6 s. Shots from the hip spread a little, so hold right click to aim down the sights and zoom. A gunshot startles grazing animals and scatters jackals and vipers, but honey badgers don't care.
 - **Health.** You can take falling, bite and rockslide damage. Health comes back slowly, and when you die you respawn. Creative mode makes you invulnerable.
 - **Day and night.** The sun and moon move across the sky, with stars at night, drifting clouds and warm colours at dusk.
 - **Water.** You can swim, and the view tints when you're underwater.
@@ -59,4 +77,7 @@ You can also turn on **GitHub Pages** for this repository (Settings → Pages �
 | `js/player.js` | Movement and collision against the density field |
 | `js/creatures.js` | Animal models, AI, spawning and combat |
 | `js/hazards.js` | Cliff collapses and rolling boulders |
+| `js/items.js` | Items, crafting recipes, dropped pickups |
+| `js/structures.js` | Campfires and forges |
+| `js/gun.js` | First-person rifle model, effects and sound |
 | `js/main.js` | Rendering, sky, input, HUD, saving |

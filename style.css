@@ -40,9 +40,41 @@ button.secondary:hover { background: #ffffff11; }
 .hint { font-size: 12.5px; opacity: .7; margin: 6px 0 12px; }
 .hint.small { margin: 10px 0 0; font-size: 11.5px; }
 
-#health { position: relative; width: 300px; height: 14px; border-radius: 8px; background: #0009; border: 1px solid #fff3; overflow: hidden; }
-#hpfill { position: absolute; inset: 0 auto 0 0; width: 100%; background: #e0464e; transition: width .2s, background .3s; }
-#hptext { position: relative; display: block; text-align: center; font-size: 10.5px; line-height: 14px; font-weight: 600; text-shadow: 0 1px 2px #000; }
+#bars { display: flex; gap: 10px; }
+.bar { position: relative; width: 200px; height: 14px; border-radius: 8px; background: #0009; border: 1px solid #fff3; overflow: hidden; }
+.bar .fill { position: absolute; inset: 0 auto 0 0; width: 100%; background: #e0464e; transition: width .2s, background .3s; }
+#foodfill { background: #d9a03c; }
+.bar span { position: relative; display: block; text-align: center; font-size: 10.5px; line-height: 14px; font-weight: 600; text-shadow: 0 1px 2px #000; }
 #hurt { position: fixed; inset: 0; pointer-events: none; opacity: 0; transition: opacity .35s; background: radial-gradient(ellipse at center, transparent 45%, rgba(200, 20, 20, 0.75)); }
 #death { display: none; margin: -6px 0 14px; padding: 10px; border-radius: 10px; background: #5a1a1a99; color: #ffd5d5; font-weight: 600; }
 #death::before { content: "You perished: "; font-weight: 400; opacity: .8; }
+
+.slot { width: 66px; }
+.slot.item { background: #1a120a99; }
+.slot.empty { opacity: .45; }
+
+#craft { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: #0a1026aa; padding: 16px; }
+#craft.hidden { display: none; }
+.panel.wide { width: min(860px, 100%); max-height: calc(100vh - 32px); overflow-y: auto; text-align: left; }
+.craft-head { display: flex; align-items: center; gap: 12px; }
+.craft-head h2 { margin: 0; font-size: 24px; color: #d9f2a8; }
+.craft-head #stations { flex: 1; font-size: 13px; opacity: .75; }
+.craft-head button { width: auto; padding: 6px 14px; margin: 0; }
+#recipes { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; margin: 14px 0; }
+.recipe { background: #ffffff0d; border: 1px solid #ffffff1a; border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.recipe.ok { border-color: #6aa84f99; }
+.recipe .out { display: flex; align-items: center; gap: 6px; font-size: 15px; }
+.recipe .owned { margin-left: auto; opacity: .6; font-size: 11px; }
+.recipe .info { font-size: 12px; opacity: .7; }
+.recipe .needs { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12.5px; }
+.recipe .st { font-size: 12px; }
+.recipe button { padding: 6px 0; font-size: 14px; margin-top: auto; }
+.have { color: #b8e6a0; }
+.miss { color: #f0a0a0; }
+.swatch { display: inline-block; width: 14px; height: 14px; border-radius: 50%; box-shadow: inset 0 -2px 3px #0005; flex: none; }
+.slot .swatch { width: 26px; height: 26px; }
+h3 { margin: 6px 0 8px; font-size: 15px; color: #d9f2a8; }
+#invlist { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; }
+.inv { display: inline-flex; align-items: center; gap: 5px; }
+.craft-actions { display: flex; gap: 10px; margin: 14px 0 4px; }
+.craft-actions button { margin: 0; }
