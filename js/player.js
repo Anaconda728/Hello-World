@@ -24,6 +24,7 @@ export class Player {
     this.health = 20;
     this.maxHealth = 20;
     this.fallImpact = 0;   // strongest landing speed since last read
+    this.mounted = null;   // the horse being ridden, if any
   }
 
   update(dt, keys) {
@@ -46,9 +47,9 @@ export class Player {
       v.z += (wish.z * speed - v.z) * k;
       v.y += (((jump ? 1 : 0) - (shift ? 1 : 0)) * speed - v.y) * k;
     } else {
-      let speed = shift ? 7.2 : 4.4;
+      let speed = this.mounted ? (shift ? 13 : 6.5) : (shift ? 7.2 : 4.4);
       if (this.inWater) speed *= 0.6;
-      const accel = this.grounded ? 14 : this.inWater ? 4 : 2.5;
+      const accel = this.mounted ? (this.grounded ? 5 : 1.5) : this.grounded ? 14 : this.inWater ? 4 : 2.5;
       const k = Math.min(1, accel * dt);
       v.x += (wish.x * speed - v.x) * k;
       v.z += (wish.z * speed - v.z) * k;
@@ -58,7 +59,7 @@ export class Player {
         if (jump) v.y = Math.min(v.y + 22 * dt, 3.6);
       } else {
         v.y -= 25 * dt;
-        if (jump && this.grounded) v.y = 8.3;
+        if (jump && this.grounded) v.y = this.mounted ? 9.6 : 8.3;
       }
       if (v.y < -50) v.y = -50;
     }
@@ -112,7 +113,7 @@ export class Player {
           p.y = k.top; v.y = 0; this.grounded = true;
         }
       }
-      pushOut(p, RADIUS, 1.8, cols);
+      pushOut(p, this.mounted ? 0.6 : RADIUS, this.mounted ? 2.8 : 1.8, cols);
     }
     // Tree trunks.
     for (const t of w.nearbyTrees(p.x, p.z)) {

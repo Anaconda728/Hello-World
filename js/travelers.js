@@ -31,7 +31,7 @@ function part(parent, geo, mat, pos, scl, rot) {
 
 const COATS = [0x6b4a2e, 0x3a2a1e, 0x8a6a4a, 0xd8d0c0, 0x2a2420, 0x9a7a5a];
 
-function buildHorse(rng) {
+export function buildHorse(rng) {
   const g = new THREE.Group();
   const coat = COATS[Math.floor(rng() * COATS.length)];
   const mane = coat === 0xd8d0c0 ? 0x9a9488 : 0x1e1612;
@@ -252,6 +252,29 @@ export class Travelers {
     this.place(tr, 1);
   }
 
+  // A wagon hired for an escort job, waiting at the town gate for the player.
+  spawnEscort(town, road) {
+    const rng = Math.random;
+    const tr = new Traveler('wagon', rng);
+    while (!tr.cart.group.children.some((c) => c.geometry === CANVAS)) {   // escort wagons are always covered
+      part(tr.cart.group, CANVAS, CANVAS_MAT, [0, 1.15, -0.1], [1, 1, 1]);
+    }
+    tr.escort = true;
+    tr.hp = 40;
+    tr.road = road;
+    tr.from = town;
+    tr.dest = road.a === town ? road.b : road.a;
+    tr.route = makeRoute(road.a === town ? road.pts : road.pts.slice().reverse());
+    tr.s = 2.7;
+    tr.speed = 0;
+    tr.state = 'wait';
+    this.list.push(tr);
+    this.scene.add(tr.horseRoot);
+    this.scene.add(tr.cartRoot);
+    this.place(tr, 1);
+    return tr;
+  }
+
   remove(t) {
     this.clearBubble(t);
     this.scene.remove(t.horseRoot);
@@ -328,19 +351,20 @@ export class Travelers {
   }
 
   onGunshot(pos) {
-    for (const t of this.list) if (!t.dead && t.horseRoot.position.distanceTo(pos) < 50) this.panic(t);
+    for (const t of this.list) if (!t.dead && !t.escort && t.horseRoot.position.distanceTo(pos) < 50) this.panic(t);
   }
 
-  hit(t, dmg, dir, ctx) {
+  hit(t, dmg, dir, ctx, byBandit = false) {
     if (t.dead) return;
     t.hp -= dmg;
-    this.panic(t, 12);
+    if (t.escort) { if (byBandit && t.bubbleCd <= 0) this.say(t, pickL(['Help!', "They're shooting at us!", 'Protect the wagon!'])); }
+    else this.panic(t, 12);
     if (t.hp <= 0) {
       t.dead = true; t.deadT = 0; t.state = 'dead';
       this.clearBubble(t);
       if (this.onLoot) this.onLoot(t, true);
-      if (this.onCrime) this.onCrime(t, 'killing a traveller', 2);
-    } else if (this.onCrime) this.onCrime(t, 'attacking a traveller', 1);
+      if (!byBandit && this.onCrime) this.onCrime(t, 'killing a traveller', 2);
+    } else if (!byBandit && this.onCrime) this.onCrime(t, 'attacking a traveller', 1);
   }
 
   aimedAt(t, dt, ctx) {
@@ -357,7 +381,7 @@ export class Travelers {
     }
   }
 
-  canTalk(t) { return !t.dead && ['travel', 'unload', 'talk'].includes(t.state); }
+  canTalk(t) { return !t.dead && ['travel', 'unload', 'talk', 'wait'].includes(t.state); }
   startTalk(t) { t.prevState = t.state === 'talk' ? t.prevState : t.state; t.state = 'talk'; this.clearBubble(t); }
   endTalk(t) { if (t.state === 'talk') t.state = t.prevState || 'travel'; }
   greeting(t, hour) {
@@ -372,7 +396,7 @@ export class Travelers {
     const p = ctx.player.pos;
     for (const t of this.list.slice()) {
       const hp = t.horseRoot.position;
-      if (hp.distanceTo(p) > 230) { this.remove(t); continue; }
+      if (hp.distanceTo(p) > 230 && !t.escort) { this.remove(t); continue; }
       if (t.bubble) { t.bubbleT -= dt; if (t.bubbleT <= 0) this.clearBubble(t); }
       t.bubbleCd -= dt; t.trampleCd -= dt;
       if (t.dead) {
@@ -385,7 +409,8 @@ export class Travelers {
       }
       // Decide how fast to go.
       let target = t.base * (t.leg === 'in' ? 0.6 : 1);
-      if (t.state === 'unload' || t.state === 'talk' || t.state === 'handsup') target = 0;
+      if (t.state === 'unload' || t.state === 'talk' || t.state === 'handsup' || t.state === 'wait' || t.halt) target = 0;
+      if (t.state === 'wait' && hp.distanceTo(p) < 12) { t.state = 'travel'; this.say(t, `Right, off to ${t.dest.name}. Keep your eyes open!`, 3.5); }
       if (t.state === 'panic') {
         target = 8.5;
         t.timer -= dt;

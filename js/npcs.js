@@ -51,7 +51,8 @@ function box(parent, color, pos, scl, rot) {
 
 export function buildHuman(rng, job, townColor) {
   const r = (arr) => arr[Math.floor(rng() * arr.length)];
-  const skin = r(SKIN), hair = r(HAIR), shirt = job === 'guard' ? 0x5a5f6a : r(CLOTH), legsC = r(TROUSERS);
+  const skin = r(SKIN), hair = r(HAIR), legsC = r(TROUSERS);
+  const shirt = job === 'guard' ? 0x5a5f6a : job === 'bandit' ? r([0x2e2626, 0x3a2e24, 0x24282e, 0x4a3a2a]) : r(CLOTH);
   const g = new THREE.Group();
   const body = new THREE.Group();
   g.add(body);
@@ -89,12 +90,16 @@ export function buildHuman(rng, job, townColor) {
   } else if (job === 'merchant') {
     const b = new THREE.Mesh(CYL, M(0x5a3a2a)); b.position.set(0, 0.37, 0); b.scale.set(0.52, 0.03, 0.52); head.add(b);
     const c = new THREE.Mesh(CYL, M(0x5a3a2a)); c.position.set(0, 0.46, 0); c.scale.set(0.3, 0.16, 0.3); head.add(c);
+  } else if (job === 'bandit') {
+    box(head, 0x9a1e1e, [0, 0.1, 0.03], [0.32, 0.14, 0.3]);
+    const b = new THREE.Mesh(CYL, M(0x1e1a18)); b.position.set(0, 0.37, 0); b.scale.set(0.56, 0.03, 0.56); head.add(b);
+    const c = new THREE.Mesh(CYL, M(0x1e1a18)); c.position.set(0, 0.47, 0); c.scale.set(0.3, 0.18, 0.3); head.add(c);
   } else if (job === 'laborer' && rng() < 0.6) {
     box(head, r(CLOTH), [0, 0.38, 0.03], [0.33, 0.08, 0.36]);
   }
   // Guard's musket follows the right arm.
   let weapon = null;
-  if (job === 'guard') {
+  if (job === 'guard' || job === 'bandit') {
     weapon = new THREE.Group();
     box(weapon, 0x5a3f28, [0, -0.5, 0.06], [0.06, 0.55, 0.08]);
     box(weapon, 0x3a3d42, [0, -0.95, 0.06], [0.035, 0.6, 0.035]);

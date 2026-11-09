@@ -10,6 +10,9 @@ import { Rifle } from './gun.js';
 import { Towns } from './towns.js';
 import { NPCs, JOB_TITLES } from './npcs.js';
 import { Travelers, TRAVELER_BUYS } from './travelers.js';
+import { Horses } from './horses.js';
+import { Bandits } from './bandits.js';
+import { MiniMap } from './minimap.js';
 
 // Hotbar: building materials, then the rifle and placeable stations.
 const HOTBAR = [
@@ -96,6 +99,9 @@ const player = new Player(world);
 const npcs = new NPCs(scene, world);
 const towns = new Towns(scene, world, npcs, save?.townRep);
 const travelers = new Travelers(scene, world);
+const horses = new Horses(scene, world);
+const bandits = new Bandits(scene, world, save);
+const minimap = new MiniMap(world);
 world.colliderProvider = { colliders: (x, z) => towns.colliders(x, z).concat(travelers.colliders(x, z)) };
 // Townsfolk and travellers share the talk / hit / aim interface.
 const mgr = (who) => (who.horseRoot ? travelers : npcs);
@@ -144,6 +150,21 @@ const items = Object.fromEntries(Object.keys(ITEMS).map((k) => [k, save?.items?.
 let aiming = false;
 
 let bounty = save?.bounty || null;
+let escort = null;
+if (save?.horse) horses.add(save.horse.x, save.horse.y, save.horse.z, true, save.horse.seed, save.horse.heading);
+bandits.onDeath = (b) => {
+  pickups.spawn('coin', 3 + Math.floor(Math.random() * 8), b.pos);
+  if (Math.random() < 0.6) pickups.spawn('ammo', 2 + Math.floor(Math.random() * 3), b.pos);
+  if (Math.random() < 0.25) pickups.spawn(Math.random() < 0.5 ? 'powder' : 'ingot', 1, b.pos);
+  if (b.mounted) {
+    horses.add(b.pos.x + 1.5, b.pos.y, b.pos.z, false, b.horseSeed, b.heading);
+    toast('The bandit\'s horse is loose. Press G next to it to ride it.');
+  }
+  if (bounty && bounty.type === 'bandit' && bounty.have < bounty.need) {
+    bounty.have++;
+    toast(bounty.have >= bounty.need ? 'Bounty complete. Return to a guard for your reward.' : `Bounty: ${bounty.have} / ${bounty.need} bandits`);
+  }
+};
 creatures.onDeath = (c) => {
   for (const [id, n] of c.def.drops || []) for (let k = 0; k < n; k++) pickups.spawn(id, 1, c.pos);
   if (bounty && bounty.type === c.type && bounty.have < bounty.need && c.pos.distanceTo(player.pos) < 60) {
@@ -181,7 +202,16 @@ const hotbarEl = $('hotbar'), infoEl = $('info'), brushEl = $('brush'), toastEl 
 const menu = $('menu'), playBtn = $('play'), loadingEl = $('loading');
 const hpFill = $('hpfill'), hpText = $('hptext'), hurtEl = $('hurt'), deathEl = $('death');
 const foodFill = $('foodfill'), foodText = $('foodtext'), craftEl = $('craft'), talkEl = $('talk');
-const wantedEl = $('wanted'), townHud = $('townhud');
+const wantedEl = $('wanted'), townHud = $('townhud'), promptEl = $('prompt');
+const miniCanvas = $('minimap'), bigCanvas = $('bigmap'), bigMapEl = $('bigmapwrap');
+const miniCtx = miniCanvas.getContext('2d'), bigCtx = bigCanvas.getContext('2d');
+let bigMapOpen = false, mapTimer = 0;
+function sizeMaps() {
+  const big = Math.floor(Math.min(innerWidth, innerHeight) * 0.82);
+  bigCanvas.width = bigCanvas.height = big;
+}
+sizeMaps();
+addEventListener('resize', sizeMaps);
 const hex = (c) => '#' + c.toString(16).padStart(6, '0');
 const slotInfo = (s) => (s.m !== undefined ? MAT_INFO[s.m] : ITEMS[s.i]);
 const slots = HOTBAR.map((s, i) => {
@@ -313,7 +343,7 @@ $('craftclose').addEventListener('click', closeCraft);
 
 // ---------- talking, trading & bounties ----------
 const SHOPS = {
-  merchant: { sells: [['cooked', 4], ['meat', 2], ['bandage', 8], ['campfire', 12]], buys: [['hide', 3], ['feather', 1], ['meat', 1]] },
+  merchant: { sells: [['cooked', 4], ['meat', 2], ['bandage', 8], ['campfire', 12], ['horse', 60]], buys: [['hide', 3], ['feather', 1], ['meat', 1]] },
   smith: { sells: [['ingot', 9], ['powder', 3], ['ammo', 3], ['rifle', 150]], buys: [['ingot', 5], ['powder', 2], ['hide', 2]] },
   keeper: { sells: [['stew', 6], ['cooked', 3]], buys: [['meat', 2], ['cooked', 2]] },
 };
@@ -321,6 +351,16 @@ const BOUNTIES = [
   { type: 'jackal', need: 3, reward: 30, text: 'Jackals have been taking our chickens at night. Kill three of them.' },
   { type: 'badger', need: 1, reward: 25, text: "There's a honey badger tearing up the fields. Put it down." },
   { type: 'viper', need: 2, reward: 20, text: 'Vipers have been biting farmhands in the long grass. Get rid of two.' },
+  { type: 'bandit', need: 4, reward: 45, text: 'Bandits have been raiding the roads. Kill four of them and I will see you paid.' },
+];
+// Escort jobs pay in raw materials. Amounts scale with the length of the road.
+const ESCORT_PAY = [
+  [['m', MAT.IRON, 30], ['m', MAT.COAL, 15]],
+  [['m', MAT.SULFUR, 12], ['m', MAT.COAL, 20]],
+  [['m', MAT.CLAY, 25], ['m', MAT.STONE, 40], ['m', MAT.WOOD, 20]],
+  [['i', 'ingot', 3], ['i', 'powder', 4]],
+  [['m', MAT.IRON, 20], ['i', 'ammo', 12]],
+  [['m', MAT.COAL, 25], ['m', MAT.WOOD, 30], ['i', 'hide', 3]],
 ];
 const DIRS = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
 const dirName = (dx, dz) => DIRS[((Math.round(Math.atan2(dx, -dz) / (Math.PI / 4)) % 8) + 8) % 8];
@@ -423,13 +463,20 @@ function renderTalk(view, text) {
           const price = buying ? Math.max(1, Math.round(base * (mul > 1 ? 0.7 : 1))) : Math.ceil(base * mul);
           const row = document.createElement('div');
           row.className = 'shoprow';
-          const have = items[id];
+          const have = id === 'horse' ? (horses.owned() ? 1 : 0) : items[id];
           row.innerHTML = `<span class="swatch" style="background:${hex(ITEMS[id].color)}"></span><span class="nm">${ITEMS[id].name} <small>(have ${have})</small></span><span class="pr">${price} c</span>`;
           const b = document.createElement('button');
           b.textContent = buying ? 'Sell' : 'Buy';
           b.disabled = buying ? have <= 0 : items.coin < price;
           b.addEventListener('click', () => {
-            if (buying) { items[id]--; items.coin += price; } else { items.coin -= price; items[id]++; }
+            if (buying) { items[id]--; items.coin += price; }
+            else if (id === 'horse') {
+              items.coin -= price;
+              const ang = player.yaw + Math.PI / 2;
+              const hx = player.pos.x + Math.sin(ang) * 2.5, hz = player.pos.z + Math.cos(ang) * 2.5;
+              horses.add(hx, world.groundY(hx, player.pos.y + 2, hz), hz, true);
+              toast('Your new horse is waiting beside you. Press G to mount it.');
+            } else { items.coin -= price; items[id]++; }
             updateHotbar(); renderTalk('trade', buying ? '"Pleasure doing business."' : '"Enjoy."');
           });
           row.appendChild(b);
@@ -459,15 +506,104 @@ function renderTalk(view, text) {
       });
     }
   }
+  if (view === 'escort') {
+    if (escort) say = `"You're already guarding a wagon to ${escort.dest.name}. Finish that first."`;
+    else {
+      if (!n.escortOffer || n.escortOffer.day !== Math.floor(time)) {
+        const road = n.town.roads[Math.floor(Math.random() * n.town.roads.length)];
+        const k = Math.max(0.7, Math.min(1.8, road.length / 320));
+        const bundle = ESCORT_PAY[Math.floor(Math.random() * ESCORT_PAY.length)].map(([kind, id, c]) => [kind, id, Math.max(1, Math.round(c * k))]);
+        n.escortOffer = { road, pay: bundle, day: Math.floor(time) };
+      }
+      const o = n.escortOffer, dest = o.road.a === n.town ? o.road.b : o.road.a;
+      say = `"I've a wagon of goods bound for ${dest.name}, ${Math.round(o.road.length)} paces ${dirName(dest.x - n.town.x, dest.z - n.town.z)}. Bandits have been hitting that road. See it there safe and I'll pay you in ${payText(o.pay)}."`;
+      btn('Take the job', () => { startEscort(n.town, o.road, o.pay); n.escortOffer = null; closeTalk(); });
+    }
+  }
   $('talktext').textContent = say;
   btn('Chat', () => renderTalk('chat'));
   if (shopDef) btn('Trade', () => renderTalk('trade'));
   if (n.job === 'guard') btn(bounty ? (bounty.have >= bounty.need ? 'Claim bounty' : 'About that job…') : 'Any work?', () => renderTalk('bounty'));
+  if (!trav && n.job === 'merchant' && n.town.roads && n.town.roads.length) btn('Escort work', () => renderTalk('escort'));
   btn('Goodbye', () => closeTalk());
 }
 $('talkclose').addEventListener('click', () => closeTalk());
 $('eatbtn').addEventListener('click', eat);
 $('bandbtn').addEventListener('click', useBandage);
+
+// ---------- escorts ----------
+function payText(pay) {
+  return pay.map(([k, id, c]) => `${c} ${(k === 'm' ? MAT_INFO[id].name : ITEMS[id].name).toLowerCase()}`).join(', ');
+}
+function startEscort(town, road, pay) {
+  const wagon = travelers.spawnEscort(town, road);
+  const len = road.length;
+  escort = { wagon, from: town, dest: wagon.dest, road, pay, awayT: 0, raiders: [],
+    ambushes: [0.3 + Math.random() * 0.15, ...(len > 260 ? [0.62 + Math.random() * 0.15] : [])] };
+  const gate = road.a === town ? road.pts[0] : road.pts[road.pts.length - 1];
+  toast(`Escort job: meet the wagon at the ${dirName(gate[0] - town.x, gate[1] - town.z)} edge of ${town.name}`);
+}
+function endEscort(ok, msg) {
+  if (ok) {
+    for (const [k, id, c] of escort.pay) { if (k === 'm') inv[id] += c; else items[id] += c; }
+    escort.dest.rep = (escort.dest.rep || 0) + 5;
+    toast(`Escort complete! Paid ${payText(escort.pay)}`);
+    updateHotbar();
+  } else toast(`Escort failed: ${msg}`);
+  if (escort.wagon && !escort.wagon.dead) escort.wagon.escort = false;
+  escort = null;
+}
+const rp = { x: 0, z: 0 };
+function updateEscort(dt) {
+  if (!escort) return;
+  const wg = escort.wagon, wp = wg.horseRoot.position;
+  if (wg.dead) return endEscort(false, 'the wagon was destroyed');
+  escort.awayT = wp.distanceTo(player.pos) > 150 ? escort.awayT + dt : 0;
+  if (escort.awayT > 25) return endEscort(false, 'you abandoned the wagon');
+  if (wg.leg !== 'road' && wg.dest === escort.dest) return endEscort(true);
+  if (wg.leg === 'road' && wg.state !== 'wait') {
+    const prog = wg.s / wg.route.total;
+    for (let i = 0; i < escort.ambushes.length; i++) {
+      if (escort.ambushes[i] !== null && prog > escort.ambushes[i] - 0.05) {
+        escort.ambushes[i] = null;
+        const s2 = Math.min(wg.route.total, wg.s + 38), pts = wg.route.pts, cum = wg.route.cum;
+        let k = 0; while (k < cum.length - 2 && cum[k + 1] < s2) k++;
+        const side = Math.random() < 0.5 ? 1 : -1;
+        const tx = pts[k + 1][0] - pts[k][0], tz = pts[k + 1][1] - pts[k][1], tl = Math.hypot(tx, tz) || 1;
+        const ax = pts[k][0] - (tz / tl) * 14 * side, az = pts[k][1] + (tx / tl) * 14 * side;
+        escort.raiders.push(...bandits.spawnAmbush(ax, az, 3 + Math.floor(Math.random() * 2), 1 + (Math.random() < 0.4 ? 1 : 0), wg));
+        toast('Ambush! Protect the wagon!');
+      }
+    }
+  }
+  escort.raiders = escort.raiders.filter((b) => !b.dead && bandits.list.includes(b));
+  wg.halt = escort.raiders.some((b) => b.state === 'fight' && b.pos.distanceTo(wp) < 45);
+}
+
+// ---------- horses ----------
+function toggleMount() {
+  if (player.mounted) {
+    const h = player.mounted;
+    player.mounted = null;
+    const side = h.heading + Math.PI / 2;
+    const x = h.pos.x + Math.sin(side) * 1.3, z = h.pos.z + Math.cos(side) * 1.3;
+    const y = world.groundY(x, h.pos.y + 2, z);
+    player.pos.set(x, isFinite(y) ? y + 0.05 : h.pos.y + 0.5, z);
+    player.vel.set(0, 0, 0);
+    h.speed = 0;
+    return;
+  }
+  const h = horses.nearest(player.pos, 3.2);
+  if (!h) { toast('No horse nearby. Whistle for yours with V, or buy one from a merchant.'); return; }
+  if (!h.owned) { for (const o of horses.list) o.owned = false; h.owned = true; toast('This horse is yours now'); }
+  player.flying = false;
+  player.mounted = h;
+  h.goal = null;
+  player.yaw = h.heading + Math.PI;   // face the way the horse is facing
+  player.pitch = Math.min(player.pitch, -0.1);
+  player.pos.set(h.pos.x, h.pos.y + 0.05, h.pos.z);
+  player.vel.set(0, 0, 0);
+}
 
 // ---------- health ----------
 const knock = new THREE.Vector3();
@@ -494,6 +630,8 @@ function damage(amount, cause, from) {
 }
 function respawn() {
   dead = false;
+  player.mounted = null;
+  if (escort) endEscort(false, 'you died');
   npcs.clearWanted();
   items.coin = Math.floor(items.coin / 2);
   player.health = player.maxHealth;
@@ -512,7 +650,7 @@ function saveGame() {
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify({
       v: 1, seed, ops: world.ops, removedTrees: [...world.removedTrees], inv, items, creative, time, health: player.health, hunger,
-      structures: structures.serialize(), townRep: towns.serializeRep(), bounty,
+      structures: structures.serialize(), townRep: towns.serializeRep(), bounty, horse: horses.serialize(), ...bandits.serialize(),
       player: { x: player.pos.x, y: player.pos.y, z: player.pos.z, yaw: player.yaw, pitch: player.pitch },
     }));
   } catch {
@@ -560,8 +698,16 @@ addEventListener('keydown', (e) => {
     updateHotbar();
     updateHealth();
     updateFood();
+  } else if (e.code === 'KeyG') {
+    toggleMount();
+  } else if (e.code === 'KeyV') {
+    const r = horses.whistle(player.pos);
+    toast(r === 'none' ? "You don't own a horse yet. Merchants sell them." : r === 'far' ? 'Your horse is too far away to hear you' : 'You whistle for your horse');
+  } else if (e.code === 'KeyM') {
+    bigMapOpen = !bigMapOpen;
+    bigMapEl.classList.toggle('hidden', !bigMapOpen);
   } else if (e.code === 'KeyF') {
-    if (creative) { player.flying = !player.flying; toast(player.flying ? 'Flying' : 'Walking'); }
+    if (creative && !player.mounted) { player.flying = !player.flying; toast(player.flying ? 'Flying' : 'Walking'); }
     else toast('Flying needs creative mode (C)');
   }
   if (['Space', 'Tab'].includes(e.code)) e.preventDefault();
@@ -644,7 +790,8 @@ function updateTarget() {
     if (c.mesh) objs.push(c.mesh);
     objs.push(...c.treeMeshes);
   }
-  objs.push(...creatures.roots(), ...structures.roots(), ...npcs.roots(), ...towns.meshes(), ...travelers.roots());
+  objs.push(...creatures.roots(), ...structures.roots(), ...npcs.roots(), ...towns.meshes(), ...travelers.roots(), ...bandits.roots());
+  for (const h of horses.list) if (h !== player.mounted) objs.push(h.root);
   camera.getWorldDirection(dir);
   raycaster.set(camera.position, dir);
   const hit = raycaster.intersectObjects(objs, true)[0];
@@ -652,8 +799,10 @@ function updateTarget() {
   highlight.visible = false;
   if (!hit) return;
   let o = hit.object;
-  while (o && !o.userData.creature && !o.userData.structure && !o.userData.npc && !o.userData.traveler && o.userData.kind !== 'town') o = o.parent;
+  while (o && !o.userData.creature && !o.userData.structure && !o.userData.npc && !o.userData.traveler && !o.userData.bandit && !o.userData.horse && o.userData.kind !== 'town') o = o.parent;
   if (o && o.userData.kind === 'town') return;
+  if (o && o.userData.bandit) { if (hit.distance < 4) target = { bandit: o.userData.bandit, point: hit.point }; return; }
+  if (o && o.userData.horse) { if (hit.distance < 4) target = { horse: o.userData.horse, point: hit.point }; return; }
   if (o && (o.userData.npc || o.userData.traveler)) {
     if (hit.distance < 4.5) target = { npc: o.userData.npc || o.userData.traveler, point: hit.point };
     return;
@@ -690,6 +839,13 @@ function doDig() {
     cooldown = 0.4;
     return;
   }
+  if (target.bandit) {
+    camera.getWorldDirection(dir);
+    bandits.hit(target.bandit, 4, dir);
+    cooldown = 0.45;
+    return;
+  }
+  if (target.horse) return;
   if (target.npc) {
     camera.getWorldDirection(dir);
     mgr(target.npc).hit(target.npc, 4, dir, ctx);
@@ -728,7 +884,7 @@ function shoot() {
   if (rifle.reload > 0) return;
   if (!creative && items.ammo <= 0) { toast('Out of cartridges'); cooldown = 0.6; return; }
   if (!creative) items.ammo--;
-  const objs = [...creatures.roots(), ...structures.roots(), ...npcs.roots(), ...towns.meshes(), ...travelers.roots()];
+  const objs = [...creatures.roots(), ...structures.roots(), ...npcs.roots(), ...towns.meshes(), ...travelers.roots(), ...bandits.roots()];
   const pcx = Math.floor(player.pos.x / CS), pcz = Math.floor(player.pos.z / CS);
   for (let dx = -3; dx <= 3; dx++) for (let dz = -3; dz <= 3; dz++) {
     const c = world.getChunk(pcx + dx, pcz + dz);
@@ -750,8 +906,9 @@ function shoot() {
   let hitHostile = false, hitNpc = false;
   if (hit) {
     let o = hit.object;
-    while (o && !o.userData.creature && !o.userData.npc && !o.userData.traveler) o = o.parent;
-    if (o && o.userData.creature) { creatures.hit(o.userData.creature, RIFLE_DAMAGE, dir, ctx); hitHostile = !!o.userData.creature.def.hostile; }
+    while (o && !o.userData.creature && !o.userData.npc && !o.userData.traveler && !o.userData.bandit) o = o.parent;
+    if (o && o.userData.bandit) { bandits.hit(o.userData.bandit, RIFLE_DAMAGE, dir); hitHostile = true; }
+    else if (o && o.userData.creature) { creatures.hit(o.userData.creature, RIFLE_DAMAGE, dir, ctx); hitHostile = !!o.userData.creature.def.hostile; }
     else if (o && o.userData.npc) { npcs.hit(o.userData.npc, RIFLE_DAMAGE, dir, ctx); hitNpc = true; }
     else if (o && o.userData.traveler) { travelers.hit(o.userData.traveler, RIFLE_DAMAGE, dir, ctx); hitNpc = true; }
     else hazards.puff(hit.point, 0.25);
@@ -759,6 +916,7 @@ function shoot() {
   creatures.scare(player.pos, 45);
   npcs.onGunshot(player.pos, !hitHostile && !hitNpc, ctx);
   travelers.onGunshot(player.pos);
+  for (const b of bandits.list) if (!b.dead && b.state === 'idle' && b.pos.distanceTo(player.pos) < 70) { b.state = 'fight'; b.sit = false; }
   updateHotbar();
 }
 
@@ -776,7 +934,7 @@ function placeStructure(type) {
 }
 
 function doBuild() {
-  if (!target || target.tree || target.creature || target.structure || target.npc) return;
+  if (!target || target.tree || target.creature || target.structure || target.npc || target.bandit || target.horse) return;
   const s = selected();
   if (s.i) { if (s.i !== 'rifle') placeStructure(s.i); return; }
   const mat = s.m;
@@ -858,6 +1016,9 @@ const ctx = {
   get night() { return sunDir.y < -0.05; },
   fireNear: (pos, r) => structures.near(['campfire', 'forge'], pos, r),
   get hour() { return (time % 1) * 24; },
+  get days() { return time; },
+  get creative() { return creative; },
+  towns, travelers, water: WATER,
   aiming: false,
   gunFx,
 };
@@ -896,18 +1057,20 @@ function frame(now) {
     time += dt / DAY_LENGTH;
     player.update(dt, keys);
     if (player.pos.y < -20) { player.pos.copy(spawn); player.vel.set(0, 0, 0); toast('You fell out of the world'); }
-    if (player.fallImpact > 14) damage(Math.round((player.fallImpact - 14) * 1.4), 'Fell from a great height');
+    if (player.fallImpact > 14) damage(Math.round((player.fallImpact - 14) * (player.mounted ? 0.7 : 1.4)), player.mounted ? 'Thrown from a horse' : 'Fell from a great height');
     player.fallImpact = 0;
     creatures.update(dt, ctx);
     npcs.update(dt, ctx);
     travelers.update(dt, ctx);
+    bandits.update(dt, ctx);
+    updateEscort(dt);
     hazards.update(dt, ctx);
     pickups.update(dt, player.pos, giveItem);
     sinceHurt += dt;
     // Hunger drains faster when sprinting or swimming.
     if (!creative) {
       const moving = keys.has('KeyW') || keys.has('KeyA') || keys.has('KeyS') || keys.has('KeyD');
-      const sprint = moving && (keys.has('ShiftLeft') || keys.has('ShiftRight'));
+      const sprint = moving && !player.mounted && (keys.has('ShiftLeft') || keys.has('ShiftRight'));
       const prev = Math.ceil(hunger);
       hunger = Math.max(0, hunger - dt * (1 / 45) * (sprint ? 3 : player.inWater ? 2 : 1));
       if (Math.ceil(hunger) !== prev) updateFood();
@@ -926,7 +1089,8 @@ function frame(now) {
       }
     }
   }
-  camera.position.set(player.pos.x, player.pos.y + EYE, player.pos.z);
+  if (ready) horses.update(locked ? dt : 0, player, ctx);
+  camera.position.set(player.pos.x, player.pos.y + EYE + (player.mounted ? 1.05 : 0), player.pos.z);
   if (hazards.shake > 0) {
     const s = hazards.shake * 0.12;
     camera.position.x += (Math.random() - 0.5) * s;
@@ -976,6 +1140,25 @@ function frame(now) {
   updateClouds(dt);
   renderer.render(scene, camera);
 
+  // Maps.
+  mapTimer -= dt;
+  if (mapTimer <= 0 && ready) {
+    mapTimer = 0.1;
+    minimap.pump(bigMapOpen ? 3 : 2);
+    const p = player.pos;
+    drawMap(miniCtx, p.x, p.z, 120, miniCanvas.width, 2, true);
+    if (bigMapOpen) drawMap(bigCtx, p.x, p.z, 700, bigCanvas.width, 8, false);
+  }
+  // Context prompt.
+  let pr = '';
+  if (locked && !dead) {
+    if (player.mounted) pr = 'G  Dismount';
+    else if (horses.nearest(player.pos, 3.2)) pr = horses.nearest(player.pos, 3.2).owned ? 'G  Mount your horse' : 'G  Take this horse';
+    else if (target && target.npc && mgr(target.npc).canTalk(target.npc)) pr = `T  Talk to ${target.npc.name}`;
+    else if (escort && escort.wagon.state === 'wait') pr = `Meet the escort wagon (${Math.round(escort.wagon.horseRoot.position.distanceTo(player.pos))} m)`;
+  }
+  if (promptEl.textContent !== pr) promptEl.textContent = pr;
+
   hudTimer -= dt;
   if (hudTimer <= 0) {
     hudTimer = 0.2;
@@ -998,7 +1181,31 @@ function frame(now) {
 }
 requestAnimationFrame(frame);
 
+function drawMap(g, cx, cz, radius, size, mpp, circle) {
+  const cells = Math.ceil(radius / 320) + 1;
+  const [tcx, tcz] = world.towns.cellOf(cx, cz);
+  const townList = [], roadSet = new Set();
+  for (let dx = -cells; dx <= cells; dx++) for (let dz = -cells; dz <= cells; dz++) {
+    const t = world.towns.get(tcx + dx, tcz + dz);
+    if (t) { townList.push(Object.assign(t, { roadCount: world.roads.roadsOf(t).length })); for (const r of world.roads.roadsOf(t)) roadSet.add(r); }
+  }
+  const camps = bandits.campsNear(cx, cz, cells).filter((c) => bandits.discovered.has(c.id)).map((c) => ({ x: c.x, z: c.z, cleared: bandits.isCleared(c, time) }));
+  const near = (q) => Math.hypot(q.x - cx, q.z - cz) < radius;
+  const h = horses.owned();
+  minimap.draw(g, {
+    cx, cz, radius, size, mpp, circle, yaw: player.yaw,
+    towns: townList, roads: [...roadSet], camps,
+    structures: structures.list.filter(near),
+    travelers: travelers.list.filter((t) => !t.dead).map((t) => ({ x: t.horseRoot.position.x, z: t.horseRoot.position.z, escort: t.escort })),
+    bandits: bandits.list.filter((b) => !b.dead && b.pos.distanceTo(player.pos) < 80).map((b) => ({ x: b.pos.x, z: b.pos.z })),
+    horse: h && h !== player.mounted ? { x: h.pos.x, z: h.pos.z } : null,
+    escort: escort ? (escort.wagon.state === 'wait' ? { x: escort.wagon.horseRoot.position.x, z: escort.wagon.horseRoot.position.z } : { x: escort.dest.x, z: escort.dest.z }) : null,
+    player: { x: player.pos.x, z: player.pos.z },
+  });
+}
+
 // Handle for debugging from the console.
 window.driftland = { world, player, inv, items, scene, camera, creatures, hazards, pickups, structures, rifle, ctx, npcs, towns, travelers,
+  horses, bandits, minimap, toggleMount, startEscort, get escort() { return escort; }, __upd: () => updateEscort(1 / 60), toggleMap: () => { bigMapOpen = !bigMapOpen; bigMapEl.classList.toggle("hidden", !bigMapOpen); },
   openTalk, renderTalk, get bounty() { return bounty; },
   craft, RECIPES, shoot, eat, openCraft, renderCraft, select: (i) => { sel = i; updateHotbar(); }, get hunger() { return hunger; }, get target() { return target; }, doDig, doBuild, setTime: (t) => { time = t; } };

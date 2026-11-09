@@ -25,6 +25,9 @@ You can also turn on **GitHub Pages** for this repository (Settings â†’ Pages â†
 | 1â€“9 / mouse wheel | Choose a hotbar slot (materials, rifle, campfire, forge) |
 | Tab | Open crafting |
 | T | Talk to the person you're looking at |
+| G | Mount / dismount a horse |
+| V | Whistle for your horse |
+| M | Open / close the full map |
 | R / H | Eat / use a bandage |
 | Q / E | Shrink / grow the brush |
 | C | Switch between survival and creative mode |
@@ -59,6 +62,16 @@ You can also turn on **GitHub Pages** for this repository (Settings â†’ Pages â†
   - greet you as they pass and carry lanterns at night.
 
   Gunfire sends horses into a gallop, and a galloping horse will trample you. Talk to a wagon driver (T) to trade from their travelling stock, or ask riders for news of the road. Aim at a traveller and they stop with their hands up; keep aiming and they throw down their purse. Crimes on the open road go unseen, but near a town they bring the guards.
+- **Horses.** Buy one from a town merchant (60 coins), or take the horse of a bandit you've beaten. Ride with G: trot, gallop with Shift, and jump higher. You can still shoot from the saddle. Your horse stays where you leave it; whistle (V) and it runs to you from up to 220 m away. Galloping doesn't make you hungry, but falls from a horse still hurt.
+- **Bandits.** Camps of 3â€“5 armed bandits (some on horseback) sit out in the wilds, away from towns and roads, with tents and a fire you can spot at night. They:
+  - aim before they fire, keep their distance, circle you and back away if you get too close;
+  - flee when badly hurt;
+  - never follow you into a town;
+  - also set roadside ambushes on you and on passing travellers.
+
+  Killing bandits is not a crime. They drop coins, cartridges and sometimes gunpowder or ingots. Wiping out a camp clears it for two days. Guards also hand out bandit bounties.
+- **Escort jobs.** Merchants in towns with roads hire you to protect a covered wagon to a neighbouring town. The wagon waits at the edge of town until you arrive, then sets off. One or two ambushes will hit it on the way, and the driver stops while the fight is on. Get it there and you're paid in raw materials: iron ore, coal, sulfur, clay, stone, timber, ingots, gunpowder or cartridges, more for longer roads. The job fails if the wagon is destroyed, if you leave it for too long, or if you die.
+- **Minimap and full map.** A round minimap in the corner shows nearby terrain, water, towns and buildings, roads, travellers, bandits close by, your horse and your escort target. Press M for a map of about 1.4 km across, with town names (and which towns have no roads) and discovered bandit camps.
 - **Townsfolk with daily routines.** Merchants, a blacksmith, an innkeeper, labourers, townsfolk and guards. They:
   - sleep at home at night and step out in the morning;
   - go to work: selling at stalls, hammering at the anvil, carrying crates house to house, patrolling;
@@ -109,5 +122,8 @@ You can also turn on **GitHub Pages** for this repository (Settings â†’ Pages â†
 | `js/towns.js` | Town sites, street layout, building meshes, colliders, road graph |
 | `js/npcs.js` | Townsfolk models, schedules, reactions, guards and the wanted system |
 | `js/roads.js` | Which towns connect, road routes, height profiles, terrain shaping |
-| `js/travelers.js` | Horses, wagons and riders travelling, unloading and reacting |
+| `js/travelers.js` | Horses, wagons and riders travelling, unloading and reacting; escort wagons |
+| `js/horses.js` | Rideable horses: owning, mounting, whistling, animation |
+| `js/bandits.js` | Bandit camps, ambushes and combat |
+| `js/minimap.js` | Terrain tile cache and map rendering |
 | `js/main.js` | Rendering, sky, input, HUD, saving |

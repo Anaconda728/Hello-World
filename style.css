@@ -96,3 +96,16 @@ h3 { margin: 6px 0 8px; font-size: 15px; color: #d9f2a8; }
 .shoprow .nm { flex: 1; }
 .shoprow .pr { color: #ffd84a; font-weight: 600; min-width: 40px; text-align: right; }
 .shoprow button { width: auto; padding: 4px 12px; font-size: 13px; margin: 0; }
+
+#minimap { position: absolute; top: 44px; right: 14px; width: 170px; height: 170px; border-radius: 50%; box-shadow: 0 2px 10px #0008; }
+#prompt { position: absolute; bottom: 150px; left: 50%; transform: translateX(-50%); font-size: 14px; font-weight: 600; padding: 4px 12px; border-radius: 8px; background: #0007; text-shadow: 0 1px 2px #000; }
+#prompt:empty { display: none; }
+#bigmapwrap { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; background: #0a1026aa; pointer-events: none; }
+#bigmapwrap.hidden { display: none; }
+#bigmap { border-radius: 14px; box-shadow: 0 10px 40px #000a; border: 1px solid #fff3; }
+.legend { font-size: 12.5px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: center; text-shadow: 0 1px 2px #000; }
+.lg { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-left: 8px; }
+.lg.town { background: #beb094; } .lg.road { background: #8a6f4e; border-radius: 2px; height: 5px; }
+.lg.camp { background: #d23a2a; border-radius: 0; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+.lg.trav { background: #f2d04a; } .lg.esc { background: #4ad8ff; } .lg.horse { background: #8a5a32; border: 1px solid #fff; }
+@media (max-width: 700px) { #minimap { width: 110px; height: 110px; } }
