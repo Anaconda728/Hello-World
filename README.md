@@ -30,9 +30,32 @@ python3 -m http.server 8000
 | Mode | Controls |
 |------|----------|
 | **Build** | LMB place / drag · RMB-drag orbit · WASD pan (Shift = fast) · Q/E rotate · wheel zoom · `1`–`9`, `0`, `-` build tools · `G` grow · `X` demolish |
-| **Walk** (`F`) | WASD move · Shift run · Space jump, Space again in mid-air for a kinetic double jump · `Q` reflex dash · `X` optic overlay · mouse look · `V` summon car |
+| **Walk** (`F`) | WASD move · Shift run · Space jump, Space again in mid-air for a kinetic double jump · `Q` reflex dash · `E` talk · `M` clear marker · `X` optic overlay · mouse look · `V` summon car |
 | **Drive** (`V`) | W/S throttle/brake · A/D steer · Space drift · Shift boost · `C` camera · `X` optic overlay · `F` step out |
 | Anywhere | `B` builder · `Esc` menu · `H` hide HUD · `P` quick save |
+
+## Life on the streets
+
+- **Robots**: bipedal humanoid robots walk the sidewalks: couriers, noodle-bar servers, decommissioned
+  security bots, street preachers, data brokers. Walk up to one and press **E**:
+  - *How was your day?* Each robot has a role, an owner corp and a mood, and tells its own story.
+  - *Mark somewhere on my map*: the nearest Chrome Clinic, Data Spire, Uplink, a gang hangout, or your
+    district. A light pillar, an on-screen compass and a minimap pin guide you there. `M` clears it.
+  - *Got a question for me?* Robots ask about dreams, chrome, sunsets and identity, react to your answer,
+    and sometimes tip you a data-chit.
+- **Gangs**: five crews (Chrome Jackals, Null Saints, Rust Dogs, Ghost Wire, Red Lotus Syndicate) hold
+  territories across the sprawl and hang out around burning barrels in dark graffiti alleys. Get close and
+  the HUD warns you're on their turf. Talk to them (**E**) for lore or a **courier job**: carry a package to
+  a drop point for credits. If an enforcer drone scans you on the way, you may be fined.
+- **Drones of all sizes** fly over the city on their own, and you can deploy more with the **Drone** tool (`N`)
+  in build mode:
+  - *Air Taxi (solo / duo)*: one- or two-seat pods with visible pilots, cruising the avenues.
+  - *Transport Ferry*: ship-sized passenger drones with two decks of lit windows full of commuters.
+  - *Enforcer Scanner*: patrols the streets with a searchlight and a sweeping laser scanner, scanning anyone
+    below. Gangs clear out within ~150 m of a deployed enforcer.
+
+  Deployed drones operate around the spot you click, add a little income, and show as amber rings in build
+  mode. Demolish over them to recall them.
 
 On foot your **optic implant** scans whatever you look at: owner corp, height, occupants, network security.
 **Optic overlay** (`X`) switches to an edge-detected cyber-vision with a scan pulse.
@@ -49,6 +72,7 @@ On foot your **optic implant** scans whatever you look at: owner corp, height, o
 | Chrome Clinic | Cybernetics clinic with augmentation vats, a giant robotic arm and a holographic cyber-head. |
 | Uplink Array | Lattice tower that fires a laser up through the smog. Big bonus income. |
 | Neon Plaza / Holo-Ad | Glowing park that boosts growth / towering billboard. |
+| Drone | Deploy an air taxi, transport ferry or enforcer scanner (pick the type in the bar above the toolbar). |
 | Grow | Adds height. Growing a sprawl building claims it as yours. |
 | Demolish | Drag a box. Refunds 50% of your own buildings. |
 
@@ -64,7 +88,12 @@ src/city.js                 infinite chunked city: seeded street layout, streami
 src/buildings.js            procedural generators for every structure + holograms
 src/materials.js            canvas-generated windows, server LEDs, signs, ads, data streams; shared materials
 src/world.js                smog sky, skyline that follows you, rain, searchlights
-src/traffic.js              hover-cars, cyber-augmented pedestrians, patrol drones, sky traffic, blimps, steam
+src/traffic.js              hover-cars, cyber-augmented pedestrians, sky traffic, blimps, steam
+src/drones.js               air taxis, transport ferries, enforcer scanners (ambient + deployed)
+src/humanoids.js            instanced articulated biped rig (robots, gang members)
+src/npcs.js                 street robots and alley gangs
+src/dialogue.js, conversation.js   procedural robot/gang dialogue and the talk flows
+src/markers.js              map marker / courier drop point
 src/saves.js                localStorage save slots, file export/import
 src/modes/                  build (orbit camera + tools), walk (augmented first person), drive (hover-car)
 ```

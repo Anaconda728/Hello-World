@@ -691,7 +691,81 @@ export function genUplink(level, seed, cx, cz) {
   return { parts: P.merge(), anim, height: top + 6, rect: [cx - 4.5, cz - 4.5, cx + 4.5, cz + 4.5] };
 }
 
+// ---------------------------------------------------------------- dark alley (gang hangout)
+// Burning barrel, dumpsters, trash, a graffiti wall, a dying neon sign. Gangs gather here.
+// `level` encodes which side faces the street (1..4 -> E, S, W, N).
+export function genAlley(level, seed, cx, cz) {
+  const openDir = (level - 1) & 3;
+  const r = mulberry32(seed);
+  const P = new Parts();
+  const anim = [];
+  P.box('roof', TILE - 0.2, 0.1, TILE - 0.2, cx, 0.05, cz, 0, false);
+  // puddles
+  for (let k = 0; k < 3; k++) {
+    const pd = new THREE.CircleGeometry(r.range(0.6, 1.4), 10);
+    pd.rotateX(-PI / 2);
+    P.geo('glass', pd, cx + r.range(-4, 4), 0.11, cz + r.range(-4, 4));
+  }
+  // back wall opposite the street with graffiti; side walls make it a narrow passage
+  const [dx, dz] = [[1, 0], [0, 1], [-1, 0], [0, -1]][openDir];
+  const bx = cx - dx * 5.6, bz = cz - dz * 5.6;
+  const alongX = dz !== 0;
+  P.box('concrete', alongX ? 11.6 : 0.4, 5, alongX ? 0.4 : 11.6, bx, 2.5, bz, 0, false);
+  const g = new THREE.PlaneGeometry(10, 4.4);
+  const q = r.int(0, 3), uv = g.attributes.uv;
+  for (let k = 0; k < uv.count; k++) uv.setXY(k, ((q % 2) + uv.getX(k)) / 2, (1 - Math.floor(q / 2) + uv.getY(k)) / 2);
+  const ry = alongX ? (dz > 0 ? 0 : PI) : (dx > 0 ? PI / 2 : -PI / 2);
+  g.rotateY(ry);
+  P.geo('graffiti', g, bx + dx * 0.22, 2.5, bz + dz * 0.22);
+  for (const sgn of [-1, 1]) {
+    const sx = cx + (alongX ? sgn * 5.6 : 0), sz = cz + (alongX ? 0 : sgn * 5.6);
+    P.box('concrete', alongX ? 0.4 : 11.6, 6, alongX ? 11.6 : 0.4, sx, 3, sz, 0, false);
+  }
+  // overhead pipes + sagging cable
+  for (let k = 0; k < 2; k++) {
+    const h = 5.2 + k * 0.7;
+    P.box('metal', alongX ? 0.25 : 11.2, 0.25, alongX ? 11.2 : 0.25, cx + (alongX ? (k - 0.5) * 3 : 0), h, cz + (alongX ? 0 : (k - 0.5) * 3), 0, false);
+  }
+  // dumpsters + trash
+  const side = (a, b) => [cx + (alongX ? a : b), cz + (alongX ? b : a)];
+  const [d1x, d1z] = side(-3.8, r.range(-3, 1));
+  P.boxB('dumpster', alongX ? 1.4 : 2.6, 1.3, alongX ? 2.6 : 1.4, d1x, 0.1, d1z);
+  P.boxB('metal', alongX ? 1.5 : 2.7, 0.12, alongX ? 2.7 : 1.5, d1x, 1.4, d1z);
+  for (let k = 0; k < 7; k++) {
+    const bag = new THREE.IcosahedronGeometry(r.range(0.3, 0.55), 0);
+    bag.scale(1, 0.7, 1);
+    const [tx, tz] = side(r.range(-4.5, -2.5) * (r.chance(0.5) ? 1 : -1), r.range(-4, 3));
+    P.geo('trash', bag, tx, 0.35, tz);
+  }
+  const [cbx, cbz] = side(3.6, r.range(-3, 0));
+  P.boxB('metal', 1, 1, 1, cbx, 0.1, cbz);
+  P.boxB('metal', 0.8, 0.8, 0.8, cbx, 1.1, cbz + 0.1);
+  // the burning barrel at the centre
+  P.cyl('metal', 0.42, 0.38, 0.95, cx, 0.1, cz, 10, false);
+  for (let k = 0; k < 3; k++) {
+    const f = new THREE.ConeGeometry(0.28 - k * 0.05, 0.9 + k * 0.25, 5);
+    f.rotateY(k * 1.3);
+    P.geo('fire', f, cx + (k - 1) * 0.1, 1.45 + k * 0.08, cz + (k - 1) * 0.06);
+  }
+  const pool = new THREE.PlaneGeometry(9, 9);
+  pool.rotateX(-PI / 2);
+  P.geo('firePool', pool, cx, 0.14, cz);
+  // dying neon sign on the wall
+  const sx = bx + dx * 0.3 + (alongX ? 3 : 0), sz = bz + dz * 0.3 + (alongX ? 0 : 3);
+  P.box('flicker', alongX ? 2.2 : 0.1, 0.5, alongX ? 0.1 : 2.2, sx, 4.4, sz, 0, false);
+  P.box('dim_red', alongX ? 0.1 : 0.1, 1.8, 0.1, sx + (alongX ? -1.1 : 0), 3.6, sz + (alongX ? 0 : -1.1), 0, false);
+  const rects = [alongX ? [cx - 5.8, bz - 0.3, cx + 5.8, bz + 0.3] : [bx - 0.3, cz - 5.8, bx + 0.3, cz + 5.8]];
+  for (const sgn of [-1, 1]) {
+    const wx = cx + (alongX ? sgn * 5.6 : 0), wz = cz + (alongX ? 0 : sgn * 5.6);
+    rects.push(alongX ? [wx - 0.3, cz - 5.8, wx + 0.3, cz + 5.8] : [cx - 5.8, wz - 0.3, cx + 5.8, wz + 0.3]);
+  }
+  const hx = alongX ? 0.75 : 1.35, hz = alongX ? 1.35 : 0.75;
+  rects.push([d1x - hx, d1z - hz, d1x + hx, d1z + hz]);
+  return { parts: P.merge(), anim, height: 6, rects, open: [dx, dz] };
+}
+
 export const GENERATORS = {
+  alley: genAlley,
   powercore: genPowercore,
   dataspire: genDataspire,
   dronehub: genDronehub,

@@ -1,5 +1,5 @@
 // DOM HUD: stats, toolbar, toasts, help, speedometer, minimap, optic scan, menus.
-import { TOOLS, TOOL_ORDER, TILE, buildingYield } from './config.js';
+import { TOOLS, TOOL_ORDER, TILE, DRONE_TYPES, DRONE_ORDER, buildingYield } from './config.js';
 import { listSlots } from './saves.js';
 
 const $ = (id) => document.getElementById(id);
@@ -8,10 +8,10 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&
 
 const HELP = {
   build: `<b>LMB</b> place / drag · <b>RMB</b> orbit<br><b>WASD</b> pan (<b>Shift</b> fast) · <b>Q/E</b> rotate · <b>wheel</b> zoom<br><b>1-9 0 -</b> build · <b>G</b> grow · <b>X</b> demolish<br><b>F</b> walk · <b>V</b> drive · <b>Esc</b> menu · <b>H</b> hide HUD`,
-  walk: `<b>WASD</b> move · <b>Shift</b> run · <b>Space</b> jump<br><b>Mouse</b> look · <b>V</b> summon car<br><b>B</b> builder · <b>Esc</b> menu · <b>H</b> hide HUD`,
+  walk: `<b>WASD</b> move · <b>Shift</b> run · <b>Space</b> jump<br><b>Mouse</b> look · <b>E</b> talk to robots &amp; gangs<br><b>M</b> clear marker · <b>V</b> summon car<br><b>B</b> builder · <b>Esc</b> menu · <b>H</b> hide HUD`,
   drive: `<b>W/S</b> throttle / brake · <b>A/D</b> steer<br><b>Space</b> drift · <b>Shift</b> boost · <b>C</b> camera<br><b>X</b> optic overlay · <b>F</b> get out · <b>B</b> builder · <b>Esc</b> menu`,
 };
-const TYPE_COLORS = { habitat: [255, 176, 46], corp: [46, 246, 255], arcology: [255, 43, 214], plaza: [57, 255, 156], billboard: [255, 94, 168], powercore: [255, 106, 46], dataspire: [57, 255, 156], dronehub: [158, 243, 255], clinic: [255, 94, 168], uplink: [138, 92, 255] };
+const TYPE_COLORS = { alley: [120, 16, 30], habitat: [255, 176, 46], corp: [46, 246, 255], arcology: [255, 43, 214], plaza: [57, 255, 156], billboard: [255, 94, 168], powercore: [255, 106, 46], dataspire: [57, 255, 156], dronehub: [158, 243, 255], clinic: [255, 94, 168], uplink: [138, 92, 255] };
 const MM = 72; // tiles shown across the minimap
 
 function timeAgo(ts) {
@@ -63,6 +63,17 @@ export class UI {
     $('m-export').onclick = () => handlers.exportSave();
     $('m-quit').onclick = () => handlers.quit();
 
+    const db = $('dronebar');
+    DRONE_ORDER.forEach((key) => {
+      const d = DRONE_TYPES[key];
+      const b = document.createElement('button');
+      b.dataset.drone = key;
+      b.title = d.desc;
+      b.innerHTML = `${d.name}<small>¢${fmt(d.cost)}</small>`;
+      b.onclick = () => handlers.droneType(key);
+      db.appendChild(b);
+    });
+    this.dialogChoices = [];
     this.mm = $('minimap').getContext('2d');
     this.mmBase = document.createElement('canvas');
     this.mmBase.width = this.mmBase.height = MM;
@@ -126,7 +137,73 @@ export class UI {
   }
   setTool(key) {
     document.querySelectorAll('.tool').forEach((b) => b.classList.toggle('active', b.dataset.tool === key));
+    document.body.classList.toggle('drone-tool', key === 'drone');
   }
+  setDroneType(key) {
+    document.querySelectorAll('#dronebar button').forEach((b) => b.classList.toggle('active', b.dataset.drone === key));
+  }
+
+  // ---------------------------------------------------------------- interaction
+  setPrompt(text) {
+    const el = $('prompt');
+    if (!text) { el.classList.remove('show'); return; }
+    if (el.dataset.t !== text) { el.innerHTML = `<kbd>E</kbd> ${esc(text)}`; el.dataset.t = text; }
+    el.classList.add('show');
+  }
+  setTerritory(g) {
+    const el = $('territory');
+    if (!g) { el.classList.remove('show'); return; }
+    el.textContent = `⚠ ${g.name} territory`;
+    el.style.color = g.css;
+    el.classList.add('show');
+  }
+  setMarker(m, dist, rel) {
+    const el = $('markerhud');
+    if (!m) { el.classList.remove('show'); return; }
+    el.classList.add('show');
+    el.classList.toggle('job', m.kind === 'job');
+    el.querySelector('.ml').textContent = '◆ ' + m.label + (m.reward ? ` · ¢${fmt(m.reward)}` : '');
+    el.querySelector('.md').textContent = dist < 1000 ? Math.round(dist) + ' m' : (dist / 1000).toFixed(1) + ' km';
+    el.querySelector('.arrow').style.transform = `rotate(${rel}rad)`;
+  }
+  alert(title, sub = '') {
+    const el = $('alert');
+    el.innerHTML = `${esc(title)}${sub ? `<small>${esc(sub)}</small>` : ''}`;
+    el.classList.remove('show');
+    void el.offsetWidth;
+    el.classList.add('show');
+  }
+  openDialog({ speaker, sub, text, choices, kind, color }) {
+    const el = $('dialog');
+    el.classList.add('show');
+    el.classList.toggle('gang', kind === 'gang');
+    if (color) el.style.setProperty('--gc', color);
+    el.querySelector('.ds').textContent = speaker;
+    el.querySelector('.dsub').textContent = sub || '';
+    const dt = el.querySelector('.dt');
+    // typewriter reveal
+    clearInterval(this.typer);
+    let n = 0;
+    dt.textContent = '';
+    this.typer = setInterval(() => { n += 2; dt.textContent = text.slice(0, n); if (n >= text.length) clearInterval(this.typer); }, 16);
+    const dc = el.querySelector('.dc');
+    dc.innerHTML = '';
+    this.dialogChoices = choices;
+    choices.forEach((c, k) => {
+      const b = document.createElement('button');
+      b.innerHTML = `<kbd>${k + 1}</kbd>${esc(c.label)}`;
+      b.onclick = () => c.fn();
+      dc.appendChild(b);
+    });
+    document.body.classList.add('talking');
+  }
+  closeDialog() {
+    clearInterval(this.typer);
+    $('dialog').classList.remove('show');
+    document.body.classList.remove('talking');
+    this.dialogChoices = [];
+  }
+  pickChoice(k) { this.dialogChoices[k]?.fn(); }
   setStats(credits, s, sandbox) {
     $('st-credits').textContent = sandbox ? '∞' : '¢' + fmt(credits);
     $('st-pop').textContent = fmt(s.pop);
@@ -204,7 +281,7 @@ export class UI {
     }
     this.mmCtx.putImageData(this.mmImg, 0, 0);
   }
-  drawMinimap(x, z, yaw) {
+  drawMinimap(x, z, yaw, marker) {
     const g = this.mm, W = $('minimap').width;
     g.imageSmoothingEnabled = false;
     g.drawImage(this.mmBase, 0, 0, W, W);
@@ -217,6 +294,14 @@ export class UI {
     g.shadowColor = '#2ef6ff'; g.shadowBlur = 8;
     g.beginPath(); g.moveTo(0, -7); g.lineTo(5, 5); g.lineTo(0, 2); g.lineTo(-5, 5); g.closePath(); g.fill();
     g.restore();
+    if (marker) {
+      let mx = (marker.x / TILE - this.mmOrigin.i) * s, mz = (marker.z / TILE - this.mmOrigin.j) * s;
+      mx = Math.max(5, Math.min(W - 5, mx)); mz = Math.max(5, Math.min(W - 5, mz));
+      g.fillStyle = marker.kind === 'job' ? '#ff2848' : '#ffd23e';
+      g.shadowColor = g.fillStyle; g.shadowBlur = 10;
+      g.beginPath(); g.moveTo(mx, mz - 6); g.lineTo(mx + 5, mz); g.lineTo(mx, mz + 6); g.lineTo(mx - 5, mz); g.closePath(); g.fill();
+      g.shadowBlur = 0;
+    }
     g.fillStyle = 'rgba(46,246,255,0.7)';
     g.font = '10px monospace';
     g.fillText(`${Math.round(x)}, ${Math.round(z)}`, 4, W - 5);

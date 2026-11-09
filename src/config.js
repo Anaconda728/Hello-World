@@ -37,12 +37,24 @@ export const TOOLS = {
   uplink:    { name: 'Uplink Array', icon: '⟟', cost: 2800, size: 1, key: '9', color: '#8a5cff', desc: 'Orbital uplink tower beaming to the satellites. Big bonus income.' },
   plaza:     { name: 'Neon Plaza',  icon: '✦', cost: 250,  size: 1, key: '0', color: '#39ff9c', desc: 'Glowing park. Speeds up growth nearby. No road needed.' },
   billboard: { name: 'Holo-Ad',     icon: '◧', cost: 300,  size: 1, key: '-', color: '#ff5ea8', desc: 'Towering holographic billboard. Small bonus income.' },
+  drone:     { name: 'Drone',       icon: '⌖', cost: 0,    size: 1, key: 'N', color: '#ffd23e', desc: 'Deploy a drone that operates around the spot you click: air taxis, transport ferries or enforcer scanners.' },
   grow:      { name: 'Grow',        icon: '▲', cost: 0,    size: 1, key: 'G', color: '#c08bff', desc: 'Click a building to add height (60% of base cost per level). Claims sprawl buildings.' },
   bulldoze:  { name: 'Demolish',    icon: '✖', cost: 0,    size: 1, key: 'X', color: '#ff4060', desc: 'Drag a box to demolish. Refunds 50% of your own buildings.' },
 };
-export const TOOL_ORDER = Object.keys(TOOLS);
+  // generated only (never in the toolbar): dark alleys where gangs hang out
+TOOLS.alley = { name: 'Dark Alley', icon: '░', cost: 0, size: 1, key: '', color: '#ff2848', desc: 'Gang hangout.', hidden: true };
+export const TOOL_ORDER = Object.keys(TOOLS).filter((k) => !TOOLS[k].hidden);
+
+// Deployable drones (Drone tool).
+export const DRONE_TYPES = {
+  taxi1:    { name: 'Air Taxi (solo)',  cost: 400,  bonus: 3,  desc: 'Single-occupant air taxi. Cruises the avenues.' },
+  taxi2:    { name: 'Air Taxi (duo)',   cost: 650,  bonus: 5,  desc: 'Two-seat air taxi. Cruises the avenues.' },
+  ferry:    { name: 'Transport Ferry',  cost: 3500, bonus: 16, desc: 'Ship-sized passenger drone carrying dozens of people.' },
+  enforcer: { name: 'Enforcer Scanner', cost: 900,  bonus: 0,  desc: 'Patrols the streets scanning citizens. Gangs clear out nearby.' },
+};
+export const DRONE_ORDER = Object.keys(DRONE_TYPES);
 export const MAX_LEVEL = 6;
-export const NO_ROAD_NEEDED = new Set(['plaza', 'billboard', 'powercore']);
+export const NO_ROAD_NEEDED = new Set(['plaza', 'billboard', 'powercore', 'alley']);
 
 // What each building contributes when owned + connected.
 export function buildingYield(type, level) {

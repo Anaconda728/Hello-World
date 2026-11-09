@@ -5,7 +5,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { DIRS, TILE, tileCenter } from './config.js';
 import { MAT, AD_COUNT } from './materials.js';
 
-const MAX_CARS = 170, MAX_PEDS = 240, N_AIR = 140, N_DRONES = 26, N_BLIMPS = 4, N_STEAM = 40, STEAM_P = 14;
+const MAX_CARS = 170, MAX_PEDS = 240, N_AIR = 140, N_BLIMPS = 4, N_STEAM = 40, STEAM_P = 14;
 const LIFE_R = 300; // ambient life exists within this many metres of the focus
 const tmpM = new THREE.Matrix4(), tmpQ = new THREE.Quaternion(), tmpS = new THREE.Vector3(), tmpP = new THREE.Vector3();
 const UP = new THREE.Vector3(0, 1, 0);
@@ -36,7 +36,7 @@ export function carGeometries() {
   return { body, lights };
 }
 
-class Walker {
+export class Walker {
   constructor(city, offset, speed, turnRate, arrive) {
     this.city = city; this.offset = offset; this.speed = speed; this.turnRate = turnRate; this.arrive = arrive;
     this.pos = new THREE.Vector3(); this.heading = 0; this.alive = false;
@@ -98,6 +98,29 @@ class Walker {
   }
 }
 
+// Keep a population of walkers topped up on loaded road tiles near the focus.
+export function respawnWalkers(city, list, target, focus, minR = 0, lifeR = LIFE_R) {
+  for (const w of list) {
+    if (w.alive && !w.pinned && Math.hypot(w.pos.x - focus.x, w.pos.z - focus.z) > lifeR) w.alive = false;
+  }
+  let alive = list.filter((w) => w.alive).length;
+  const R = Math.floor(lifeR / TILE) - 2;
+  const fi = Math.floor(focus.x / TILE), fj = Math.floor(focus.z / TILE);
+  let tries = 0;
+  for (const w of list) {
+    if (alive >= target || tries > 400) break;
+    if (w.alive) continue;
+    while (tries++ < 400) {
+      const i = fi + Math.floor((Math.random() * 2 - 1) * R), j = fj + Math.floor((Math.random() * 2 - 1) * R);
+      if (Math.hypot(i - fi, j - fj) * TILE < minR) continue;
+      const ch = city.chunkAt(i, j);
+      if (!ch || !ch.meshes.length || !city.isRoad(i, j)) continue;
+      w.spawn(i, j);
+      if (w.alive) { alive++; break; }
+    }
+  }
+}
+
 export class Traffic {
   constructor(scene, city) {
     this.city = city;
@@ -155,27 +178,6 @@ export class Traffic {
       alt: [55, 80, 105, 140, 180][Math.floor(Math.random() * 5)] + Math.random() * 6,
       speed: 22 + Math.random() * 26, span: 650,
     }));
-
-    // police / corp patrol drones: hover over the streets, sweeping searchlights
-    const dBody = mergeGeometries([
-      new THREE.BoxGeometry(1.4, 0.4, 1.4).toNonIndexed(),
-      new THREE.BoxGeometry(3.2, 0.1, 0.25).toNonIndexed(),
-      new THREE.BoxGeometry(0.25, 0.1, 3.2).toNonIndexed(),
-      new THREE.CylinderGeometry(0.35, 0.35, 0.5, 8).translate(0, -0.4, 0.4).toNonIndexed(),
-    ]);
-    this.droneBody = new THREE.InstancedMesh(dBody, new THREE.MeshStandardMaterial({ color: 0x1a1a22, roughness: 0.4, metalness: 0.8 }), N_DRONES);
-    const siren = new THREE.BoxGeometry(0.5, 0.18, 0.3).translate(0, 0.3, 0);
-    this.droneSiren = new THREE.InstancedMesh(siren, new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }), N_DRONES);
-    const cone = new THREE.ConeGeometry(4.5, 22, 20, 1, true).translate(0, -11, 0);
-    this.droneBeam = new THREE.InstancedMesh(cone, MAT.beam.clone(), N_DRONES);
-    this.droneBeam.material.opacity = 0.07;
-    this.droneBeam.material.color = new THREE.Color(0x9fc4ff).multiplyScalar(0.6);
-    this.drones = Array.from({ length: N_DRONES }, () => {
-      const w = new Walker(city, 0, 5 + Math.random() * 4, 1.2, 3);
-      w.alt = 16 + Math.random() * 12;
-      w.phase = Math.random() * 10;
-      return w;
-    });
 
     // advertising blimps drifting high above the sprawl
     this.blimps = [];
@@ -238,7 +240,7 @@ export class Traffic {
     scene.add(this.steam);
     this.steamTimer = 0;
 
-    this.instanced = [this.carBody, this.carLights, this.pedBody, this.pedUmb, this.pedVisor, this.pedArm, this.airBody, this.airLights, this.droneBody, this.droneSiren, this.droneBeam];
+    this.instanced = [this.carBody, this.carLights, this.pedBody, this.pedUmb, this.pedVisor, this.pedArm, this.airBody, this.airLights];
     for (const m of this.instanced) {
       m.frustumCulled = false;
       m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -248,7 +250,8 @@ export class Traffic {
   }
 
   // Keep each population topped up on loaded road tiles near the focus.
-  respawn(list, target, focus, minR = 0) {
+  respawn(list, target, focus, minR = 0) { respawnWalkers(this.city, list, target, focus, minR); }
+  _unused(list, target, focus, minR = 0) {
     for (const w of list) {
       if (w.alive && Math.hypot(w.pos.x - focus.x, w.pos.z - focus.z) > LIFE_R) w.alive = false;
     }
@@ -276,7 +279,6 @@ export class Traffic {
       this.spawnTimer = 0.7;
       this.respawn(this.cars, MAX_CARS, focus);
       this.respawn(this.peds, MAX_PEDS, focus);
-      this.respawn(this.drones, N_DRONES, focus);
     }
     let n = 0;
     for (const w of this.cars) {
@@ -311,29 +313,6 @@ export class Traffic {
       n++;
     }
     this.pedBody.count = this.pedUmb.count = this.pedVisor.count = this.pedArm.count = n;
-
-    n = 0;
-    const col = new THREE.Color();
-    for (const w of this.drones) {
-      if (!w.alive) continue;
-      w.update(dt);
-      if (!w.alive) continue;
-      tmpP.set(w.pos.x, w.alt + Math.sin(t * 0.8 + w.phase) * 1.5, w.pos.z);
-      tmpQ.setFromAxisAngle(UP, w.heading);
-      tmpM.compose(tmpP, tmpQ, tmpS.set(1, 1, 1));
-      this.droneBody.setMatrixAt(n, tmpM);
-      this.droneSiren.setMatrixAt(n, tmpM);
-      const red = Math.sin(t * 9 + w.phase) > 0;
-      this.droneSiren.setColorAt(n, red ? col.setRGB(4, 0.2, 0.3) : col.setRGB(0.3, 0.8, 4));
-      // the searchlight wobbles as it scans the street
-      const e = new THREE.Euler(Math.sin(t * 0.9 + w.phase) * 0.35, w.heading, Math.cos(t * 0.7 + w.phase) * 0.35, 'YXZ');
-      tmpQ.setFromEuler(e);
-      tmpM.compose(tmpP, tmpQ, tmpS.set(1, 1, 1));
-      this.droneBeam.setMatrixAt(n, tmpM);
-      n++;
-    }
-    this.droneBody.count = this.droneSiren.count = this.droneBeam.count = n;
-    if (this.droneSiren.instanceColor) this.droneSiren.instanceColor.needsUpdate = true;
 
     for (const g of this.blimps) {
       const u = g.userData;

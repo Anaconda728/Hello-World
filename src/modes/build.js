@@ -1,6 +1,7 @@
 // Top-down builder: orbit camera, tile picking, tool placement with live previews.
 import * as THREE from 'three';
-import { TILE, TOOLS, TOOL_ORDER, MAX_LEVEL, NO_ROAD_NEEDED, worldToTile, tileCenter, buildingYield } from '../config.js';
+import { TILE, TOOLS, TOOL_ORDER, MAX_LEVEL, NO_ROAD_NEEDED, DRONE_TYPES, worldToTile, tileCenter, buildingYield } from '../config.js';
+import { MAT } from '../materials.js';
 import { CORPS } from '../city.js';
 
 const MAX_PREVIEW = 160;
@@ -16,6 +17,7 @@ export class BuildMode {
     this.dist = 260;
     this.smooth = { target: this.target.clone(), yaw: this.yaw, pitch: this.pitch, dist: this.dist };
     this.tool = 'road';
+    this.droneType = 'taxi1';
     this.keys = new Set();
     this.raycaster = new THREE.Raycaster();
     this.plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -36,6 +38,13 @@ export class BuildMode {
     this.multi.frustumCulled = false;
     scene.add(this.multi);
 
+    // holo rings marking where deployed drones are based (build mode only)
+    this.anchorMesh = new THREE.InstancedMesh(new THREE.TorusGeometry(3.2, 0.15, 6, 32).rotateX(Math.PI / 2), MAT.neon_amber, 200);
+    this.anchorMesh.count = 0;
+    this.anchorMesh.frustumCulled = false;
+    scene.add(this.anchorMesh);
+    this.anchorVersion = -1;
+
     const dom = ctx.renderer.domElement;
     dom.addEventListener('pointerdown', (e) => this.active && !this.ctx.paused && this.onDown(e));
     window.addEventListener('pointermove', (e) => this.active && this.onMove(e));
@@ -49,6 +58,7 @@ export class BuildMode {
 
   enter() {
     this.active = true;
+    this.anchorMesh.visible = true;
     this.ghost.visible = true;
     this.ctx.world.grid.visible = true;
     this.ctx.scene.fog.density = 0.0021;
@@ -57,6 +67,7 @@ export class BuildMode {
   }
   exit() {
     this.active = false;
+    this.anchorMesh.visible = false;
     this.ghost.visible = false;
     this.multi.count = 0;
     this.drag = null;
@@ -65,8 +76,14 @@ export class BuildMode {
   }
   focus(x, z) { this.target.set(x, 0, z); }
 
+  setDroneType(k) {
+    this.droneType = k;
+    this.ctx.ui.setDroneType(k);
+    if (this.tool !== 'drone') this.setTool('drone');
+  }
   setTool(t) {
     this.tool = t;
+    if (t === 'drone') this.ctx.ui.setDroneType(this.droneType);
     const col = new THREE.Color(TOOLS[t].color);
     this.ghostMat.color.copy(col);
     this.ghostEdges.material.color.copy(col).multiplyScalar(2);
@@ -101,6 +118,12 @@ export class BuildMode {
     this.ctx.audio.unlock();
     const p = this.pick(e);
     if (!p) return;
+    if (this.tool === 'drone') {
+      const r = this.ctx.city.placeDrone(this.droneType, p.i, p.j);
+      if (r === 'money') this.ctx.ui.toast('Insufficient credits');
+      else { this.ctx.audio.blip(620); this.ctx.ui.toast(`${DRONE_TYPES[this.droneType].name} deployed`, true); }
+      return;
+    }
     if (this.tool === 'road' || this.tool === 'bulldoze') {
       this.drag = { kind: this.tool, start: p, end: p };
     } else {
@@ -141,9 +164,14 @@ export class BuildMode {
       if (placed) this.ctx.audio.blip(520);
     } else if (d.kind === 'bulldoze') {
       let n = 0;
-      for (const [i, j] of this.rect(d.start, d.end)) {
+      const rect = this.rect(d.start, d.end);
+      for (const [i, j] of rect) {
         if (this.ctx.city.remove(i, j)) n++;
         if (this.ctx.city.setRoad(i, j, false)) n++;
+      }
+      if (rect.length) {
+        const is = rect.map((q) => q[0]), js = rect.map((q) => q[1]);
+        n += this.ctx.city.removeDronesIn(Math.min(...is), Math.min(...js), Math.max(...is), Math.max(...js));
       }
       if (n) this.ctx.audio.blip(160);
     }
@@ -226,18 +254,22 @@ export class BuildMode {
       const c = tileCenter(p.i, p.j);
       const s = t.size;
       this.ghost.position.set(c.x + (s - 1) * TILE / 2, 0, c.z + (s - 1) * TILE / 2);
-      const h = this.tool === 'road' || this.tool === 'bulldoze' ? 0.6 : this.tool === 'plaza' ? 3 : 24;
+      const h = this.tool === 'road' || this.tool === 'bulldoze' ? 0.6 : this.tool === 'plaza' ? 3 : this.tool === 'drone' ? 30 : 24;
       this.ghost.scale.set(TILE * s * 0.96, h, TILE * s * 0.96);
     }
     let valid = true;
     if (this.tool === 'road') valid = city.canRoad(p.i, p.j);
     else if (this.tool === 'grow') valid = !!b && b.level < MAX_LEVEL;
     else if (this.tool === 'bulldoze') valid = !!b || city.isRoad(p.i, p.j);
+    else if (this.tool === 'drone') valid = true;
     else valid = city.canPlace(this.tool, p.i, p.j);
     this.ghostMat.opacity = valid ? 0.25 : 0.1;
     this.ghostEdges.material.color.set(valid ? t.color : '#ff3050').multiplyScalar(2);
 
-    if (b) {
+    if (this.tool === 'drone') {
+      const d = DRONE_TYPES[this.droneType];
+      this.ctx.ui.setInfo(`${d.name} — ¢${d.cost} — ${d.desc}`);
+    } else if (b) {
       const y = buildingYield(b.type, b.level);
       const conn = NO_ROAD_NEEDED.has(b.type) || city.connected(b);
       let s = `${TOOLS[b.type].name} · LVL ${b.level} · ${Math.round(b.height)}m · ${b.owned ? 'YOURS' : 'Sprawl / ' + b.corp}`;
@@ -282,6 +314,15 @@ export class BuildMode {
     );
     cam.lookAt(s.target);
     if (this.drag || this.hover) this.updatePreviewThrottled();
+    const city = this.ctx.city;
+    if (city.version !== this.anchorVersion) {
+      this.anchorVersion = city.version;
+      const m = new THREE.Matrix4();
+      const list = city.placedDrones.slice(0, 200);
+      list.forEach((d, k) => { const c = tileCenter(d.i, d.j); m.makeTranslation(c.x, 0.4, c.z); this.anchorMesh.setMatrixAt(k, m); });
+      this.anchorMesh.count = list.length;
+      this.anchorMesh.instanceMatrix.needsUpdate = true;
+    }
   }
   updatePreviewThrottled() {
     // the city can change under a still cursor (growth, new roads) - refresh a few times a second

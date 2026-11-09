@@ -17,6 +17,10 @@ import { BuildMode } from './modes/build.js';
 import { WalkMode } from './modes/walk.js';
 import { DriveMode } from './modes/drive.js';
 import * as Saves from './saves.js';
+import { Robots, Gangs } from './npcs.js';
+import { Drones } from './drones.js';
+import { Marker } from './markers.js';
+import { Conversation } from './conversation.js';
 
 const PREFS_KEY = 'neonsprawl.prefs.v1';
 const DEMO_SEED = 7331;
@@ -99,6 +103,10 @@ const world = new World(scene);
 const city = new City(scene);
 const traffic = new Traffic(scene, city);
 const audio = new Audio();
+const robots = new Robots(scene, city);
+const gangs = new Gangs(scene, city);
+const drones = new Drones(scene, city);
+const marker = new Marker(scene);
 const prefs = Object.assign({ rain: true, sound: false, fx: true, growth: true }, loadPrefs());
 
 const ctx = { renderer, scene, camera, world, city, audio, ui: null, paused: false };
@@ -106,10 +114,12 @@ let state = 'title';    // title | loading | game
 let mode = null;        // build | walk | drive
 let slot = null;        // { id, name } of the world being played
 let vision = 0, visionTarget = 0, pulse = 1, glitch = 0;
+let talkTarget = null;
 
 const ui = new UI({
   tool: (t) => { if (mode !== 'build') setMode('build'); build.setTool(t); },
   mode: (m) => setMode(m),
+  droneType: (k) => { if (mode !== 'build') setMode('build'); build.setDroneType(k); },
   toggle: (id, v) => applyToggle(id, v),
   menu: (on) => setPaused(on),
   newWorld: (o) => newWorld(o),
@@ -138,6 +148,26 @@ ctx.ui = ui;
 const build = new BuildMode(ctx);
 const walk = new WalkMode(ctx);
 const drive = new DriveMode(ctx);
+const conv = new Conversation({
+  city, ui, marker, audio,
+  player: () => (mode === 'drive' ? drive.pos : walk.pos),
+  onClose: () => { const dom = renderer.domElement; if (mode === 'walk' && !ctx.paused) dom.requestPointerLock?.(); },
+});
+
+// enforcer drones scan you as they pass overhead
+drones.onScan = () => {
+  if (mode !== 'walk' || state !== 'game') return;
+  glitch = 0.45;
+  audio.blip(1500);
+  const job = marker.active?.kind === 'job';
+  if (job && Math.random() < 0.4) {
+    const fine = Math.min(150, Math.floor(city.credits));
+    if (!city.sandbox) city.credits -= fine;
+    ui.alert('◉ CONTRABAND FLAGGED', `Enforcer scan · fined ¢${fine} · keep moving`);
+  } else {
+    ui.alert('◉ CITIZEN SCAN', job ? 'Package undetected · no warrants' : 'ID verified · no warrants');
+  }
+};
 
 function applyToggle(id, v) {
   if (id === 'rain') { world.rain.visible = v; audio.setRain(v); }
@@ -158,7 +188,7 @@ function snapshot() {
   const f = focusPoint();
   return {
     v: 2, name: slot?.name || 'Sprawl', city: city.serialize(),
-    player: { mode, x: f.x, z: f.z, yaw: build.yaw, dist: build.dist },
+    player: { mode, x: f.x, z: f.z, yaw: build.yaw, dist: build.dist, marker: marker.active },
     stats: { pop: s.pop, credits: Math.floor(city.credits) },
   };
 }
@@ -197,7 +227,12 @@ function startGame(p, fresh) {
   ui.showTitle(false);
   traffic.cars.forEach((w) => (w.alive = false));
   traffic.peds.forEach((w) => (w.alive = false));
-  traffic.drones.forEach((w) => (w.alive = false));
+  robots.list.forEach((w) => (w.alive = false));
+  gangs.groups.clear();
+  drones.ambient.forEach((a) => (a.alive = false));
+  drones.placed.clear();
+  if (conv.open) conv.close();
+  if (p.marker) marker.set(p.marker); else marker.clear();
   build.target.set(p.x || 0, 0, p.z || 0);
   build.smooth.target.copy(build.target);
   build.yaw = build.smooth.yaw = p.yaw ?? Math.PI * 0.25;
@@ -211,11 +246,13 @@ function startGame(p, fresh) {
 }
 function goTitle() {
   state = 'title';
+  if (conv.open) conv.close();
   if (mode === 'walk') walk.exit();
   if (mode === 'drive') { drive.exit(); drive.body.visible = false; }
   if (mode === 'build') build.exit();
   mode = null;
   slot = null;
+  marker.clear();
   city.reset(DEMO_SEED, { freeZone: false });
   ui.showTitle(true);
   ui.setLoading(false);
@@ -252,7 +289,7 @@ function setMode(next) {
   audio.unlock();
   const prev = mode;
   if (prev === 'build') build.exit();
-  if (prev === 'walk') walk.exit();
+  if (prev === 'walk') { if (conv.open) conv.close(); walk.exit(); }
   if (prev === 'drive') drive.exit();
   mode = next;
   ui.setMode(next);
@@ -284,6 +321,13 @@ function setMode(next) {
 window.addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT') return;
   if (state !== 'game') return;
+  if (conv.open) {
+    const n = parseInt(e.key, 10);
+    if (n >= 1 && n <= 9) ui.pickChoice(n - 1);
+    else if (e.code === 'Escape' || e.code === 'KeyE') conv.close();
+    e.preventDefault();
+    return;
+  }
   if (e.code === 'Escape') { setPaused(!ctx.paused); e.preventDefault(); return; }
   if (ctx.paused) return;
   if (e.code === 'KeyB') setMode('build');
@@ -291,12 +335,19 @@ window.addEventListener('keydown', (e) => {
   else if (e.code === 'KeyV') setMode('drive');
   else if (e.code === 'KeyH') document.body.classList.toggle('hide-hud');
   else if (e.code === 'KeyP') saveGame(true);
+  else if (e.code === 'KeyM' && marker.active) { marker.clear(); ui.toast('Marker cleared'); }
+  else if (e.code === 'KeyE' && mode === 'walk' && talkTarget) {
+    if (document.pointerLockElement) document.exitPointerLock();
+    if (talkTarget.robot) conv.talkRobot(talkTarget.robot, robots);
+    else conv.talkGang(talkTarget.gang);
+    audio.blip(700);
+  }
   else if (e.code === 'KeyX' && mode !== 'build') { visionTarget = visionTarget ? 0 : 1; pulse = 0; audio.blip(visionTarget ? 1200 : 400); }
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.code)) e.preventDefault();
 });
 // browsers release pointer lock on Esc before we see the key: treat that as "open menu"
 document.addEventListener('pointerlockchange', () => {
-  if (!document.pointerLockElement && mode === 'walk' && state === 'game' && !ctx.paused && walk.active) setPaused(true);
+  if (!document.pointerLockElement && mode === 'walk' && state === 'game' && !ctx.paused && walk.active && !conv.open && !document.body.classList.contains('talking')) setPaused(true);
 });
 
 window.addEventListener('resize', () => {
@@ -347,7 +398,7 @@ function frame() {
   } else {
     if (!ctx.paused) {
       if (mode === 'build') build.update(dt);
-      else if (mode === 'walk') walk.update(dt);
+      else if (mode === 'walk') { if (!conv.open) walk.update(dt); }
       else drive.update(dt, t);
     }
     city.stream(f.x, f.z, mode === 'drive' ? 9 : 6);
@@ -374,11 +425,52 @@ function frame() {
     else if (mode === 'walk') yaw = walk.yaw;
     else yaw = drive.heading + Math.PI;
     const p = mode === 'build' ? build.smooth.target : mode === 'walk' ? walk.pos : drive.pos;
-    ui.drawMinimap(p.x, p.z, yaw);
+    ui.drawMinimap(p.x, p.z, yaw, marker.active);
+
+    // street interaction (walk mode): who's in front of us, whose turf are we on
+    talkTarget = null;
+    if (mode === 'walk' && !conv.open) {
+      const fx = -Math.sin(walk.yaw), fz = -Math.cos(walk.yaw);
+      const r = robots.nearest(walk.pos, fx, fz);
+      const g = gangs.nearest(walk.pos, fx, fz);
+      if (r && (!g || Math.hypot(r.pos.x - walk.pos.x, r.pos.z - walk.pos.z) < Math.hypot(g.m.x - walk.pos.x, g.m.z - walk.pos.z))) {
+        const id = robots.identity(r, {});
+        talkTarget = { robot: r };
+        ui.setPrompt(`Talk to ${id.designation} “${id.name}” (${id.role})`);
+      } else if (g) {
+        talkTarget = { gang: g };
+        ui.setPrompt(`Talk to ${g.m.name} · ${g.g.gang.name}`);
+      } else ui.setPrompt(null);
+      const terr = gangs.territory(walk.pos);
+      ui.setTerritory(terr ? terr.gang : null);
+    } else if (!conv.open) { ui.setPrompt(null); ui.setTerritory(null); }
+
+    // marker: arrival + compass
+    const playerPos = mode === 'build' ? null : p;
+    const arrived = marker.update(dt, t, playerPos);
+    if (arrived) {
+      if (arrived.kind === 'job') {
+        if (!city.sandbox) city.credits += arrived.reward;
+        ui.alert('✔ DELIVERY COMPLETE', `+¢${arrived.reward} from the ${arrived.gang}`);
+        audio.blip(1100);
+      } else ui.toast(`Arrived: ${arrived.label.toLowerCase()}`, true);
+    }
+    if (marker.active) {
+      const dir = new THREE.Vector3();
+      camera.getWorldDirection(dir);
+      const dx = marker.active.x - camera.position.x, dz = marker.active.z - camera.position.z;
+      const len = Math.hypot(dir.x, dir.z) || 1, fx = dir.x / len, fz = dir.z / len;
+      const rel = Math.atan2(dx * -fz + dz * fx, dx * fx + dz * fz);
+      ui.setMarker(marker.active, Math.hypot(marker.active.x - p.x, marker.active.z - p.z), rel);
+    } else ui.setMarker(null);
   }
 
   city.update(dt, t, mode === 'build' && state === 'game');
   traffic.update(dt, t, f);
+  const npcPlayer = state === 'game' && mode === 'walk' ? walk.pos : null;
+  robots.update(dt, t, f, npcPlayer);
+  gangs.update(dt, t, f, npcPlayer);
+  drones.update(dt, t, f, npcPlayer);
   world.update(dt, t, camera, f);
   animateMaterials(t);
 
@@ -402,4 +494,4 @@ window.addEventListener('beforeunload', () => saveGame(false));
 requestAnimationFrame(frame);
 
 // handy for debugging from the console
-window.neon = { city, build, walk, drive, traffic, setMode, scene, camera, renderer, newWorld, loadSlot, get state() { return state; } };
+window.neon = { city, build, walk, drive, traffic, robots, gangs, drones, marker, conv, setMode, scene, camera, renderer, newWorld, loadSlot, get state() { return state; } };

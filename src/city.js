@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import {
   TILE, CHUNK, CHUNK_W, LOAD_DIST, UNLOAD_DIST, FREE_ZONE, SUPERBLOCK, DIRS, TOOLS, MAX_LEVEL,
-  NO_ROAD_NEEDED, tileCenter, chunkCoord, chunkKey, buildingYield,
+  NO_ROAD_NEEDED, DRONE_TYPES, tileCenter, chunkCoord, chunkKey, buildingYield,
 } from './config.js';
 import { GENERATORS } from './buildings.js';
 import { Parts, meshesFromPartMaps } from './geom.js';
@@ -54,6 +54,7 @@ export class City {
     this.owned = new Set();
     this.anims = [];
     this.nextId = 1;
+    this.placedDrones = []; // [{ type, i, j, seed }]
     this.credits = 30000;
     this.sandbox = false;
     this.changed = false;
@@ -133,6 +134,16 @@ export class City {
         this.addBuilding('arcology', i, j, { level: this.levelFor(r, this.downtown(i, j)), seed: hashInt(i, j, this.seed + 5), owned: false });
       }
     }
+    // dark alleys: one open side onto a street, gangs gather inside
+    const nAlleys = r() < 0.75 ? r.int(1, 3) : 0;
+    for (let t = 0, made = 0; t < 30 && made < nAlleys; t++) {
+      const i = c.i0 + r.int(1, CHUNK - 2), j = c.j0 + r.int(1, CHUNK - 2);
+      if (!this.tileFreeIn(c, i, j) || this.downtown(i, j) > 0.72) continue;
+      const open = DIRS.map(([dx, dz]) => this.baseRoad(i + dx, j + dz));
+      if (open.filter(Boolean).length !== 1) continue;
+      this.addBuilding('alley', i, j, { level: 1 + open.indexOf(true), seed: hashInt(i, j, this.seed + 17), owned: false });
+      made++;
+    }
     for (let b = 0; b < CHUNK; b++) for (let a = 0; a < CHUNK; a++) {
       const i = c.i0 + a, j = c.j0 + b;
       if (!this.tileFreeIn(c, i, j)) continue;
@@ -156,7 +167,7 @@ export class City {
     const id = this.nextId++;
     const b = { id, type, i, j, level, seed, owned, size: TOOLS[type].size, parts: null, anim: null };
     const c0 = this.center(b), h = (TILE * b.size) / 2 - 1;
-    b.rects = type === 'plaza' ? [] : [[c0.x - h, c0.z - h, c0.x + h, c0.z + h]];
+    b.rects = type === 'plaza' || type === 'alley' ? [] : [[c0.x - h, c0.z - h, c0.x + h, c0.z + h]];
     b.height = 20;
     b.corp = CORPS[seed % CORPS.length];
     this.buildings.set(id, b);
@@ -262,7 +273,7 @@ export class City {
   grow(i, j, { free = false } = {}) {
     const b = this.buildingAt(i, j);
     if (!b) return false;
-    if (b.level >= MAX_LEVEL) return 'max';
+    if (b.level >= MAX_LEVEL || b.type === 'alley') return 'max';
     if (!free && !this.spend(this.growCost(b))) return 'money';
     b.level++;
     b.seed = (Math.imul(b.seed, 1664525) + 1013904223) >>> 0;
@@ -271,6 +282,24 @@ export class City {
     this.touch(b.i, b.j);
     return true;
   }
+  // ------------------------------------------------------------ deployed drones
+  placeDrone(type, i, j, { free = false, seed = randSeed() } = {}) {
+    if (!free && !this.spend(DRONE_TYPES[type].cost)) return 'money';
+    this.placedDrones.push({ type, i, j, seed });
+    this.changed = true; this.version++;
+    return true;
+  }
+  removeDronesIn(i0, j0, i1, j1) {
+    const before = this.placedDrones.length;
+    this.placedDrones = this.placedDrones.filter((d) => {
+      const hit = d.i >= i0 && d.i <= i1 && d.j >= j0 && d.j <= j1;
+      if (hit && !this.sandbox) this.credits += Math.floor(DRONE_TYPES[d.type].cost / 2);
+      return !hit;
+    });
+    if (this.placedDrones.length !== before) { this.changed = true; this.version++; }
+    return before - this.placedDrones.length;
+  }
+
   connected(b) {
     const s = b.size;
     for (let a = 0; a < s; a++) {
@@ -511,6 +540,7 @@ export class City {
       pop += y.pop; jobs += y.jobs; bonus += y.bonus;
       if (y.power > 0) supply += y.power; else demand -= y.power;
     }
+    for (const d of this.placedDrones) bonus += DRONE_TYPES[d.type].bonus;
     const ratio = demand > 0 ? Math.min(1, supply / demand) : 1;
     const income = Math.round((pop * 0.002 + Math.min(pop, jobs) * 0.004 + jobs * 0.001 + bonus) * (0.25 + 0.75 * ratio));
     this.power = { supply, demand, ratio };
@@ -567,7 +597,8 @@ export class City {
       }
       chunks[c.key] = { r, b };
     }
-    return { v: 2, seed: this.seed, freeZone: this.freeZone, credits: Math.floor(this.credits), sandbox: this.sandbox, chunks };
+    const drones = this.placedDrones.map((d) => [d.type, d.i, d.j, d.seed]);
+    return { v: 2, seed: this.seed, freeZone: this.freeZone, credits: Math.floor(this.credits), sandbox: this.sandbox, chunks, drones };
   }
   load(data) {
     this.reset(data.seed, { freeZone: data.freeZone !== false });
@@ -586,6 +617,7 @@ export class City {
       if (this.footprint(type, i, j).some(([a, b]) => this.buildingAt(a, b))) continue;
       this.addBuilding(type, i, j, { level, seed, owned: !!owned });
     }
+    this.placedDrones = (data.drones || []).filter((d) => DRONE_TYPES[d[0]]).map(([type, i, j, seed]) => ({ type, i, j, seed }));
     this.credits = data.credits ?? 30000;
     this.sandbox = !!data.sandbox;
   }

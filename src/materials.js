@@ -260,6 +260,55 @@ function dataTexture() {
   return t;
 }
 
+// Spray-painted gang tags for alley walls.
+function graffitiTexture(seed) {
+  const r = mulberry32(seed);
+  const [c, g] = canvas(512, 256);
+  g.fillStyle = '#121016';
+  g.fillRect(0, 0, 512, 256);
+  for (let k = 0; k < 2000; k++) { const v = r.int(14, 30); g.fillStyle = `rgb(${v},${v},${v + 3})`; g.fillRect(r() * 512, r() * 256, 2, 2); }
+  g.strokeStyle = '#0a090c'; g.lineWidth = 2;
+  for (let y = 0; y < 256; y += 32) { g.beginPath(); g.moveTo(0, y); g.lineTo(512, y); g.stroke(); }
+  const words = ['JACKALS', 'NULL', 'RUST', 'GHOST', 'LOTUS', 'NO GODS', '2077?', 'WAKE UP', 'FREE AI', 'K1LL CORP', 'SKRT', 'VOID'];
+  for (let k = 0; k < 4; k++) {
+    const col = neonCss(r.pick(['magenta', 'green', 'amber', 'cyan', 'pink', 'red']));
+    g.save();
+    g.translate(r.range(60, 450), r.range(50, 210));
+    g.rotate(r.range(-0.3, 0.3));
+    g.font = `bold italic ${r.int(36, 78)}px sans-serif`;
+    g.textAlign = 'center';
+    g.lineWidth = 8; g.strokeStyle = '#000'; g.shadowColor = col; g.shadowBlur = 18;
+    const w = r.pick(words);
+    g.strokeText(w, 0, 0);
+    g.fillStyle = col; g.fillText(w, 0, 0);
+    g.restore();
+  }
+  // drips
+  for (let k = 0; k < 30; k++) { g.fillStyle = neonCss(r.pick(['magenta', 'green', 'amber'])); g.globalAlpha = 0.5; g.fillRect(r() * 512, r.range(80, 200), 2, r.range(10, 50)); }
+  g.globalAlpha = 1;
+  return c;
+}
+
+// Ferry passenger windows with silhouettes of the people inside.
+function ferryWindowTexture() {
+  const r = mulberry32(555);
+  const [c, g] = canvas(512, 64);
+  g.fillStyle = '#07070c'; g.fillRect(0, 0, 512, 64);
+  for (let k = 0; k < 16; k++) {
+    const x = k * 32 + 4;
+    g.fillStyle = r() < 0.85 ? r.pick(['#ffe2b0', '#bff4ff', '#ffc4ef']) : '#111522';
+    g.fillRect(x, 10, 24, 40);
+    g.fillStyle = 'rgba(0,0,0,0.85)';
+    const n = r.int(0, 2);
+    for (let q = 0; q < n; q++) {
+      const px = x + 6 + q * 10;
+      g.beginPath(); g.arc(px, 30, 4, 0, Math.PI * 2); g.fill();
+      g.fillRect(px - 5, 34, 10, 16);
+    }
+  }
+  return c;
+}
+
 function labelTexture(text, color) {
   const [c, g] = canvas(256, 64);
   g.fillStyle = 'rgba(20,0,10,0.75)';
@@ -394,6 +443,25 @@ export function initMaterials(renderer) {
     map: dataTexture(), color: new THREE.Color(1.6, 1.6, 1.6), transparent: true,
     blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, side: THREE.DoubleSide,
   });
+  const [ga, gg] = canvas(1024, 512);
+  for (let k = 0; k < 4; k++) gg.drawImage(graffitiTexture(700 + k * 13), (k % 2) * 512, Math.floor(k / 2) * 256);
+  MAT.graffiti = new THREE.MeshStandardMaterial({ map: tex(ga, { repeat: false }), emissiveMap: tex(ga, { repeat: false }), emissive: 0xffffff, emissiveIntensity: 0.55, roughness: 0.8 });
+  const fw = tex(ferryWindowTexture());
+  MAT.ferryWin = new THREE.MeshStandardMaterial({ map: fw, emissiveMap: fw, emissive: 0xffffff, emissiveIntensity: 1.3, roughness: 0.3 });
+  MAT.fire = neonBasic(0xff7a1a, 3);
+  MAT.firePool = MAT.pool.clone();
+  MAT.firePool.color = new THREE.Color(0xff6a1a).multiplyScalar(0.9);
+  MAT.flicker = neonBasic(0xff2bd6, 3);
+  MAT.trash = new THREE.MeshStandardMaterial({ color: 0x0b0b0d, roughness: 0.35, metalness: 0.1 });
+  MAT.dumpster = new THREE.MeshStandardMaterial({ color: 0x14241c, roughness: 0.6, metalness: 0.5 });
+  MAT.rotor = new THREE.MeshBasicMaterial({ color: new THREE.Color(0x9ef3ff).multiplyScalar(0.6), transparent: true, opacity: 0.25, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
+  MAT.canopy = new THREE.MeshStandardMaterial({ color: 0x0a1a2a, roughness: 0.05, metalness: 0.6, transparent: true, opacity: 0.55, envMapIntensity: 2 });
+  MAT.hull = new THREE.MeshStandardMaterial({ color: 0x1c1c26, roughness: 0.35, metalness: 0.85 });
+  MAT.hullWhite = new THREE.MeshStandardMaterial({ color: 0xc8ccd6, roughness: 0.3, metalness: 0.6 });
+  MAT.marker = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffd23e).multiplyScalar(1.6), transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
+  MAT.markerJob = MAT.marker.clone();
+  MAT.markerJob.color = new THREE.Color(0xff2848).multiplyScalar(1.6);
+  MAT.scanFan = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xff2040).multiplyScalar(1.5), transparent: true, opacity: 0.12, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
   MAT.cable = new THREE.MeshStandardMaterial({ color: 0x07070b, roughness: 0.8, metalness: 0.3 });
   MAT.noPower = new THREE.SpriteMaterial({ map: labelTexture('⚡ NO POWER', '#ffb02e'), depthTest: false, toneMapped: false, color: new THREE.Color(1.5, 1.5, 1.5) });
   MAT.warnLabel = new THREE.SpriteMaterial({ map: labelTexture('⚠ NO ROAD', '#ff3a5c'), depthTest: false, toneMapped: false, color: new THREE.Color(1.5, 1.5, 1.5) });
@@ -416,4 +484,12 @@ export function animateMaterials(t) {
   MAT.plasmaB.color.setRGB(p * 0.18, p * 0.96, p * 1.0);
   MAT.laser.opacity = 0.4 + Math.sin(t * 6) * 0.12;
   MAT.dataStream.map.offset.y = (t * 0.35) % 1;
+  const fl = 1.3 + Math.sin(t * 17) * 0.3 + Math.sin(t * 29 + 1) * 0.25 + Math.random() * 0.25;
+  MAT.fire.color.setRGB(fl * 1.0, fl * 0.38, fl * 0.08);
+  MAT.firePool.opacity = 0.45 + Math.sin(t * 19) * 0.1;
+  const on = Math.random() < 0.06 ? 0.1 : (Math.sin(t * 0.7) > -0.9 ? 3 : 0.1);
+  MAT.flicker.color.setRGB(on, on * 0.17, on * 0.84);
+  MAT.marker.opacity = 0.28 + Math.sin(t * 3) * 0.08;
+  MAT.markerJob.opacity = 0.3 + Math.sin(t * 5) * 0.1;
+  MAT.scanFan.opacity = 0.1 + Math.sin(t * 8) * 0.03;
 }
