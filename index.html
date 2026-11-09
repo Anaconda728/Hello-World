@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Neon Sprawl</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./vendor/three/three.module.min.js",
+        "three/addons/": "./vendor/three/addons/"
+      }
+    }
+  </script>
+</head>
+<body class="mode-build">
+  <canvas id="c"></canvas>
+
+  <div id="loading">
+    <div class="logo">NEON<span>SPRAWL</span></div>
+    <div class="sub">booting city grid…</div>
+  </div>
+
+  <div id="hud">
+    <div id="topbar">
+      <div class="brand">NEON<span>SPRAWL</span></div>
+      <div class="stats">
+        <div class="stat"><label>Credits</label><b id="st-credits">0</b></div>
+        <div class="stat"><label>Population</label><b id="st-pop">0</b></div>
+        <div class="stat"><label>Jobs</label><b id="st-jobs">0</b></div>
+        <div class="stat"><label>Income</label><b id="st-income">0</b></div>
+      </div>
+      <div class="modes">
+        <button data-mode="build">Build <kbd>B</kbd></button>
+        <button data-mode="walk">Walk <kbd>F</kbd></button>
+        <button data-mode="drive">Drive <kbd>V</kbd></button>
+      </div>
+    </div>
+
+    <div id="side">
+      <canvas id="minimap" width="180" height="180"></canvas>
+      <div class="menu build-only">
+        <button id="btn-generate">Generate city</button>
+        <button id="btn-clear">Clear grid</button>
+      </div>
+      <div class="toggles">
+        <label><input type="checkbox" id="tg-rain" checked /> Rain</label>
+        <label><input type="checkbox" id="tg-sound" /> Sound</label>
+        <label><input type="checkbox" id="tg-fx" checked /> Bloom FX</label>
+        <label class="build-only"><input type="checkbox" id="tg-growth" checked /> Auto-growth</label>
+        <label class="build-only"><input type="checkbox" id="tg-sandbox" /> Sandbox ∞¢</label>
+      </div>
+    </div>
+
+    <div id="toolbar" class="build-only"></div>
+    <div id="info" class="build-only"></div>
+    <div id="help"></div>
+    <div id="toasts"></div>
+    <div id="crosshair" class="walk-only"></div>
+    <div id="lockmsg" class="walk-only">Click to look around · <kbd>B</kbd> back to builder</div>
+    <div id="speedo" class="drive-only">
+      <b id="speed">0</b><span>km/h</span>
+      <div class="bar"><i id="boostbar"></i></div>
+    </div>
+  </div>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
