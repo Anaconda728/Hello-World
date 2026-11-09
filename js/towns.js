@@ -317,7 +317,7 @@ const ROOF = [0x8e3b2f, 0x6e4a33, 0x4f5560, 0x7a3a2a, 0x5d3b2a];
 const TIMBER = 0x5a3f28, STONE = 0x8a8a8f, DARKSTONE = 0x6c6c72, DOOR = 0x4a3020;
 const pick = (arr, r) => arr[Math.floor(r * arr.length) % arr.length];
 
-export function buildTownMeshes(t) {
+export function buildTownMeshes(t, roads = []) {
   const solid = new GeoBuilder(), glow = new GeoBuilder();
   const colliders = [];
   const Y = t.y;
@@ -420,6 +420,20 @@ export function buildTownMeshes(t) {
     target = solid;
   }
 
+  // Signposts where roads leave town.
+  target = solid;
+  for (const r of roads) {
+    const fromA = r.a === t;
+    const g0 = fromA ? r.pts[0] : r.pts[r.pts.length - 1];
+    const g1 = fromA ? r.pts[3] : r.pts[r.pts.length - 4];
+    const dx = g1[0] - g0[0], dz = g1[1] - g0[1], L = Math.hypot(dx, dz) || 1;
+    const px = g0[0] + (dz / L) * 3.2, pz = g0[1] - (dx / L) * 3.2;
+    setBase(px, pz, Math.atan2(dx, dz));
+    part(BOXN, 0, 1.2, 0, 0.14, 2.4, 0.14, TIMBER);
+    part(BOXN, 0.35, 2.05, 0.1, 0.9, 0.28, 0.06, 0x9a7a4a, 0);
+    part(PRISM, 0, 2.45, 0, 0.3, 0.15, 0.3, TIMBER);
+  }
+
   const group = new THREE.Group();
   const sm = new THREE.Mesh(solid.build(), townSolidMat);
   const gm = new THREE.Mesh(glow.build(), townGlowMat);
@@ -454,7 +468,8 @@ export class Towns {
   }
 
   activate(t) {
-    const { group, colliders } = buildTownMeshes(t);
+    t.roads = this.world.roads.roadsOf(t);
+    const { group, colliders } = buildTownMeshes(t, t.roads);
     t.group = group;
     t.colliders = colliders;
     t.rep = this.rep[t.id] ?? 0;

@@ -49,7 +49,7 @@ function box(parent, color, pos, scl, rot) {
   return m;
 }
 
-function buildHuman(rng, job, townColor) {
+export function buildHuman(rng, job, townColor) {
   const r = (arr) => arr[Math.floor(rng() * arr.length)];
   const skin = r(SKIN), hair = r(HAIR), shirt = job === 'guard' ? 0x5a5f6a : r(CLOTH), legsC = r(TROUSERS);
   const g = new THREE.Group();
@@ -111,7 +111,7 @@ function buildHuman(rng, job, townColor) {
 }
 
 // ---------- speech bubbles ----------
-function makeBubble(text) {
+export function makeBubble(text) {
   const c = document.createElement('canvas');
   const g = c.getContext('2d');
   g.font = '600 30px system-ui, sans-serif';

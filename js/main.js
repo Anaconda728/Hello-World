@@ -9,6 +9,7 @@ import { Structures } from './structures.js';
 import { Rifle } from './gun.js';
 import { Towns } from './towns.js';
 import { NPCs, JOB_TITLES } from './npcs.js';
+import { Travelers, TRAVELER_BUYS } from './travelers.js';
 
 // Hotbar: building materials, then the rifle and placeable stations.
 const HOTBAR = [
@@ -94,7 +95,10 @@ const world = new World(scene, seed, save, RENDER_RADIUS);
 const player = new Player(world);
 const npcs = new NPCs(scene, world);
 const towns = new Towns(scene, world, npcs, save?.townRep);
-world.colliderProvider = towns;
+const travelers = new Travelers(scene, world);
+world.colliderProvider = { colliders: (x, z) => towns.colliders(x, z).concat(travelers.colliders(x, z)) };
+// Townsfolk and travellers share the talk / hit / aim interface.
+const mgr = (who) => (who.horseRoot ? travelers : npcs);
 
 function findSpawn() {
   // New worlds start on the outskirts of the nearest town.
@@ -146,6 +150,17 @@ creatures.onDeath = (c) => {
     bounty.have++;
     toast(bounty.have >= bounty.need ? 'Bounty complete. Return to a guard for your reward.' : `Bounty: ${bounty.have} / ${bounty.need} ${c.def.name.toLowerCase()}s`);
   }
+};
+travelers.onLoot = (t, killed) => {
+  const at = t.cartRoot ? t.cartRoot.position : t.horseRoot.position;
+  pickups.spawn('coin', killed ? 4 + Math.floor(Math.random() * 7) : 6 + Math.floor(Math.random() * 9), at);
+  if (killed) for (const [id] of t.stock.slice(0, t.kind === 'wagon' ? 3 : 1)) pickups.spawn(id, 1, at);
+};
+travelers.onCrime = (t, reason, level) => {
+  // Out on the open road, nobody sees. Near a town, someone always does.
+  const pos = t.horseRoot.position;
+  const nearTown = towns.current(pos.x, pos.z) || (towns.nearest(pos.x, pos.z)?.dist ?? 1e9) < 90;
+  if (nearTown || npcs.witnesses(pos, 40)) npcs.addWanted(level, reason, ctx);
 };
 npcs.onDeath = (n) => {
   pickups.spawn('coin', n.job === 'guard' ? 6 + Math.floor(Math.random() * 6) : 2 + Math.floor(Math.random() * 6), n.pos);
@@ -333,18 +348,39 @@ function rumor(n) {
   if (n.job === 'keeper') pool.push('My stew will keep you going all day. Six coins a bowl.');
   if (n.job === 'guard') pool.push(`Keep the peace in ${t.name} and we will get along fine.`);
   if (t.rep < -20) pool.push('People are talking about you, you know. Nothing good.');
+  if (t.roads && t.roads.length) {
+    for (const r of t.roads) {
+      const o = r.a === t ? r.b : r.a;
+      pool.push(`The road ${dirName(o.x - t.x, o.z - t.z)} takes you to ${o.name}. Wagons come through most days.`);
+    }
+  } else if (t.roads) {
+    pool.push("No road reaches us here. If you want to go anywhere, it's across the wilds.", 'We hardly see a trader from one season to the next. No roads, you see.');
+  }
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+function travelerRumor(t) {
+  const pool = [
+    `I'm bound for ${t.dest.name}, out of ${t.from.name}.`,
+    'Keep to the road after dark. Jackals hunt the verges.',
+    'Bandits have been seen along these roads. Not you, I hope?',
+    `${t.from.name} had a good market this week.`,
+  ];
+  const near = towns.nearest(t.horseRoot.position.x, t.horseRoot.position.z);
+  if (near && near.town.roads && !near.town.roads.length) pool.push(`${near.town.name}? No road goes there. You'd have to walk.`);
+  if (t.kind === 'rider') pool.push(`I carry letters to ${t.dest.name}. Can't stop long.`);
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
 function openTalk(n) {
   talkNpc = n;
   talkOpen = true;
-  npcs.startTalk(n);
+  mgr(n).startTalk(n);
   renderTalk('main');
   document.exitPointerLock();
 }
 function closeTalk(relock = true) {
-  if (talkNpc) npcs.endTalk(talkNpc);
+  if (talkNpc) mgr(talkNpc).endTalk(talkNpc);
   talkNpc = null;
   talkOpen = false;
   talkEl.classList.add('hidden');
@@ -356,9 +392,13 @@ function closeTalk(relock = true) {
 function renderTalk(view, text) {
   const n = talkNpc;
   if (!n) return;
-  const t = n.town;
+  const trav = !!n.horseRoot;
+  const t = trav ? { rep: 0, name: '' } : n.town;
   $('talkname').textContent = n.name;
-  $('talkjob').textContent = `${JOB_TITLES[n.job]} of ${t.name}  ·  Town standing: ${standing(t.rep)}  ·  ${items.coin} coins`;
+  $('talkjob').textContent = trav
+    ? `${n.kind === 'wagon' ? 'Travelling trader' : 'Rider'}  ·  ${n.from.name} to ${n.dest.name}  ·  ${items.coin} coins`
+    : `${JOB_TITLES[n.job]} of ${t.name}  ·  Town standing: ${standing(t.rep)}  ·  ${items.coin} coins`;
+  const shopDef = trav ? (n.kind === 'wagon' ? { sells: n.stock, buys: TRAVELER_BUYS } : null) : SHOPS[n.job];
   const opts = $('talkopts'), shop = $('talkshop');
   opts.innerHTML = ''; shop.innerHTML = '';
   const btn = (label, fn, disabled = false) => {
@@ -368,10 +408,10 @@ function renderTalk(view, text) {
     opts.appendChild(b);
   };
   let say = text;
-  if (view === 'main' && !say) say = `"${npcs.greeting(n, (time % 1) * 24)}"`;
-  if (view === 'chat') say = `"${rumor(n)}"`;
+  if (view === 'main' && !say) say = `"${mgr(n).greeting(n, (time % 1) * 24)}"`;
+  if (view === 'chat') say = `"${trav ? travelerRumor(n) : rumor(n)}"`;
   if (view === 'trade') {
-    const sh = SHOPS[n.job], mul = priceMul(t.rep);
+    const sh = shopDef, mul = priceMul(t.rep);
     if (t.rep < -50) say = '"I won\'t trade with the likes of you."';
     else {
       say = say || (mul > 1 ? '"Prices are higher for you. You know why."' : '"Take a look. Fair prices, all of them."');
@@ -421,7 +461,7 @@ function renderTalk(view, text) {
   }
   $('talktext').textContent = say;
   btn('Chat', () => renderTalk('chat'));
-  if (SHOPS[n.job]) btn('Trade', () => renderTalk('trade'));
+  if (shopDef) btn('Trade', () => renderTalk('trade'));
   if (n.job === 'guard') btn(bounty ? (bounty.have >= bounty.need ? 'Claim bounty' : 'About that job…') : 'Any work?', () => renderTalk('bounty'));
   btn('Goodbye', () => closeTalk());
 }
@@ -504,8 +544,8 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyT') {
     if (target && target.npc) {
       const n = target.npc;
-      if (npcs.canTalk(n)) openTalk(n);
-      else if (n.job !== 'guard' && npcs.law.wanted > 0) npcs.say(n, 'Get away from me!');
+      if (mgr(n).canTalk(n) && npcs.law.wanted === 0) openTalk(n);
+      else if (n.job !== 'guard' && npcs.law.wanted > 0) mgr(n).say(n, 'Get away from me!');
     } else toast('Look at someone nearby and press T to talk');
   }
   if (e.code.startsWith('Digit')) {
@@ -546,7 +586,7 @@ document.addEventListener('pointerlockchange', () => {
   talkEl.classList.toggle('hidden', locked || !talkOpen);
   if (locked) {
     craftOpen = false;
-    if (talkOpen) { talkOpen = false; if (talkNpc) npcs.endTalk(talkNpc); talkNpc = null; }
+    if (talkOpen) { talkOpen = false; if (talkNpc) mgr(talkNpc).endTalk(talkNpc); talkNpc = null; }
   }
   if (!locked) {
     keys.clear(); digging = building = aiming = false;
@@ -604,7 +644,7 @@ function updateTarget() {
     if (c.mesh) objs.push(c.mesh);
     objs.push(...c.treeMeshes);
   }
-  objs.push(...creatures.roots(), ...structures.roots(), ...npcs.roots(), ...towns.meshes());
+  objs.push(...creatures.roots(), ...structures.roots(), ...npcs.roots(), ...towns.meshes(), ...travelers.roots());
   camera.getWorldDirection(dir);
   raycaster.set(camera.position, dir);
   const hit = raycaster.intersectObjects(objs, true)[0];
@@ -612,10 +652,10 @@ function updateTarget() {
   highlight.visible = false;
   if (!hit) return;
   let o = hit.object;
-  while (o && !o.userData.creature && !o.userData.structure && !o.userData.npc && o.userData.kind !== 'town') o = o.parent;
+  while (o && !o.userData.creature && !o.userData.structure && !o.userData.npc && !o.userData.traveler && o.userData.kind !== 'town') o = o.parent;
   if (o && o.userData.kind === 'town') return;
-  if (o && o.userData.npc) {
-    if (hit.distance < 4) target = { npc: o.userData.npc, point: hit.point };
+  if (o && (o.userData.npc || o.userData.traveler)) {
+    if (hit.distance < 4.5) target = { npc: o.userData.npc || o.userData.traveler, point: hit.point };
     return;
   }
   if (o) {
@@ -652,7 +692,7 @@ function doDig() {
   }
   if (target.npc) {
     camera.getWorldDirection(dir);
-    npcs.hit(target.npc, 4, dir, ctx);
+    mgr(target.npc).hit(target.npc, 4, dir, ctx);
     cooldown = 0.45;
     return;
   }
@@ -688,7 +728,7 @@ function shoot() {
   if (rifle.reload > 0) return;
   if (!creative && items.ammo <= 0) { toast('Out of cartridges'); cooldown = 0.6; return; }
   if (!creative) items.ammo--;
-  const objs = [...creatures.roots(), ...structures.roots(), ...npcs.roots(), ...towns.meshes()];
+  const objs = [...creatures.roots(), ...structures.roots(), ...npcs.roots(), ...towns.meshes(), ...travelers.roots()];
   const pcx = Math.floor(player.pos.x / CS), pcz = Math.floor(player.pos.z / CS);
   for (let dx = -3; dx <= 3; dx++) for (let dz = -3; dz <= 3; dz++) {
     const c = world.getChunk(pcx + dx, pcz + dz);
@@ -710,13 +750,15 @@ function shoot() {
   let hitHostile = false, hitNpc = false;
   if (hit) {
     let o = hit.object;
-    while (o && !o.userData.creature && !o.userData.npc) o = o.parent;
+    while (o && !o.userData.creature && !o.userData.npc && !o.userData.traveler) o = o.parent;
     if (o && o.userData.creature) { creatures.hit(o.userData.creature, RIFLE_DAMAGE, dir, ctx); hitHostile = !!o.userData.creature.def.hostile; }
     else if (o && o.userData.npc) { npcs.hit(o.userData.npc, RIFLE_DAMAGE, dir, ctx); hitNpc = true; }
+    else if (o && o.userData.traveler) { travelers.hit(o.userData.traveler, RIFLE_DAMAGE, dir, ctx); hitNpc = true; }
     else hazards.puff(hit.point, 0.25);
   }
   creatures.scare(player.pos, 45);
   npcs.onGunshot(player.pos, !hitHostile && !hitNpc, ctx);
+  travelers.onGunshot(player.pos);
   updateHotbar();
 }
 
@@ -858,6 +900,7 @@ function frame(now) {
     player.fallImpact = 0;
     creatures.update(dt, ctx);
     npcs.update(dt, ctx);
+    travelers.update(dt, ctx);
     hazards.update(dt, ctx);
     pickups.update(dt, player.pos, giveItem);
     sinceHurt += dt;
@@ -912,11 +955,12 @@ function frame(now) {
       camera.getWorldDirection(dir);
       raycaster.far = 35;
       raycaster.set(camera.position, dir);
-      const h = raycaster.intersectObjects([...npcs.roots(), ...towns.meshes()], true)[0];
+      const h = raycaster.intersectObjects([...npcs.roots(), ...towns.meshes(), ...travelers.roots()], true)[0];
       raycaster.far = REACH;
       let o = h && h.object;
-      while (o && !o.userData.npc) o = o.parent;
-      if (o) npcs.aimedAt(o.userData.npc, dt, ctx);
+      while (o && !o.userData.npc && !o.userData.traveler) o = o.parent;
+      if (o && o.userData.npc) npcs.aimedAt(o.userData.npc, dt, ctx);
+      else if (o) travelers.aimedAt(o.userData.traveler, dt, ctx);
     }
     cooldown -= dt;
     if (cooldown <= 0 && (digging || building)) {
@@ -943,13 +987,18 @@ function frame(now) {
     wantedEl.classList.toggle('seen', npcs.law.seen);
     const nt = towns.nearest(p.x, p.z);
     if (!nt) townHud.textContent = '';
-    else if (nt.dist < nt.town.R + 8) townHud.textContent = `${nt.town.name}`;
+    else if (nt.dist < nt.town.R + 8) {
+      const rs = nt.town.roads || world.roads.roadsOf(nt.town);
+      townHud.textContent = rs.length
+        ? `${nt.town.name}  ·  roads to ${rs.map((r) => (r.a === nt.town ? r.b : r.a).name).join(', ')}`
+        : `${nt.town.name}  ·  no roads in or out`;
+    }
     else townHud.textContent = `${nt.town.name}  ·  ${Math.round(nt.dist)} m ${dirName(nt.town.x - p.x, nt.town.z - p.z)}`;
   }
 }
 requestAnimationFrame(frame);
 
 // Handle for debugging from the console.
-window.driftland = { world, player, inv, items, scene, camera, creatures, hazards, pickups, structures, rifle, ctx, npcs, towns,
+window.driftland = { world, player, inv, items, scene, camera, creatures, hazards, pickups, structures, rifle, ctx, npcs, towns, travelers,
   openTalk, renderTalk, get bounty() { return bounty; },
   craft, RECIPES, shoot, eat, openCraft, renderCraft, select: (i) => { sel = i; updateHotbar(); }, get hunger() { return hunger; }, get target() { return target; }, doDig, doBuild, setTime: (t) => { time = t; } };

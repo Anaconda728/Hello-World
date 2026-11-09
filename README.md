@@ -47,6 +47,18 @@ You can also turn on **GitHub Pages** for this repository (Settings â†’ Pages â†
   - *Vipers* hide in the grass. Watch for one rearing up just before it strikes.
 - **Unstable cliffs.** Digging into a steep face or under an overhang *sometimes* makes it collapse. The ground rumbles first, then a slab breaks off and tumbles down as boulders. Boulders hurt anything they hit, then settle back into the terrain.
 - **Towns.** Each world region may hold a settlement, built on flattened land with cobbled streets, a market plaza with stalls and a well, timber-framed houses, a tavern, a smithy, a stone guard tower and street lamps. Windows light up at night. The HUD shows the nearest town and its direction, and new worlds start just outside one.
+- **Roads, or none at all.** Some neighbouring towns are joined by winding dirt roads with signposts at the edge of town. Roads follow the land, are smoothed and banked across their width, and run on raised causeways over water. Other towns are cut off:
+  - roughly a third are isolated, with no roads in or out;
+  - some lose their links because mountains, steep ground or another town sit in the way.
+
+  Inside a town, the HUD lists where its roads lead, or says it has none. Townsfolk mention it in conversation too.
+- **Travellers.** Horse-drawn trade wagons (some covered, loaded with crates, barrels and sacks) and riders on horseback travel the roads between connected towns. They drive into the market, unload their cargo, then head off down another road. They:
+  - keep to the right, so opposing traffic passes;
+  - queue behind slower traffic;
+  - stop and shout if you block the road, then swerve around you;
+  - greet you as they pass and carry lanterns at night.
+
+  Gunfire sends horses into a gallop, and a galloping horse will trample you. Talk to a wagon driver (T) to trade from their travelling stock, or ask riders for news of the road. Aim at a traveller and they stop with their hands up; keep aiming and they throw down their purse. Crimes on the open road go unseen, but near a town they bring the guards.
 - **Townsfolk with daily routines.** Merchants, a blacksmith, an innkeeper, labourers, townsfolk and guards. They:
   - sleep at home at night and step out in the morning;
   - go to work: selling at stalls, hammering at the anvil, carrying crates house to house, patrolling;
@@ -96,4 +108,6 @@ You can also turn on **GitHub Pages** for this repository (Settings â†’ Pages â†
 | `js/gun.js` | First-person rifle model, effects and sound |
 | `js/towns.js` | Town sites, street layout, building meshes, colliders, road graph |
 | `js/npcs.js` | Townsfolk models, schedules, reactions, guards and the wanted system |
+| `js/roads.js` | Which towns connect, road routes, height profiles, terrain shaping |
+| `js/travelers.js` | Horses, wagons and riders travelling, unloading and reacting |
 | `js/main.js` | Rendering, sky, input, HUD, saving |
