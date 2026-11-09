@@ -46,6 +46,22 @@ export class World {
     return Math.min(H - 5, Math.max(3, h));
   }
 
+  forestAt(x, z) { return this.noise.noise2(x * 0.008 + 500, z * 0.008 - 500); }
+
+  // Height of the first solid surface found searching down from just above yHint.
+  groundY(x, yHint, z) {
+    let top = yHint + 2;
+    for (let k = 0; k < 8 && this.sample(x, top, z) > 0; k++) top += 1;
+    let prev = top, dPrev = this.sample(x, prev, z);
+    if (dPrev > 0) return -Infinity;
+    for (let y = top - 0.5; y > yHint - 8; y -= 0.5) {
+      const d = this.sample(x, y, z);
+      if (d > 0) return prev - (dPrev / (dPrev - d)) * 0.5;
+      prev = y; dPrev = d;
+    }
+    return -Infinity;
+  }
+
   topMat(h, x, z) {
     if (h < WATER + 1.6) return MAT.SAND;
     if (h > 47 + this.noise.noise2(x * 0.05, z * 0.05) * 4) return MAT.SNOW;
@@ -224,7 +240,7 @@ export class World {
     for (let i = 0; i < 12; i++) {
       const r1 = rng(), r2 = rng(), r3 = rng(), r4 = rng(), r5 = rng(), r6 = rng();
       const x = x0 + r1 * CS, z = z0 + r2 * CS;
-      const forest = this.noise.noise2(x * 0.008 + 500, z * 0.008 - 500);
+      const forest = this.forestAt(x, z);
       const p = Math.min(0.9, Math.max(0.04, 0.2 + forest * 1.8));
       if (r3 > p) continue;
       const h = this.heightAt(x, z);

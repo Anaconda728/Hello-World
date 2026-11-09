@@ -39,3 +39,10 @@ button.secondary:hover { background: #ffffff11; }
 .controls b { color: #d9f2a8; font-weight: 600; }
 .hint { font-size: 12.5px; opacity: .7; margin: 6px 0 12px; }
 .hint.small { margin: 10px 0 0; font-size: 11.5px; }
+
+#health { position: relative; width: 300px; height: 14px; border-radius: 8px; background: #0009; border: 1px solid #fff3; overflow: hidden; }
+#hpfill { position: absolute; inset: 0 auto 0 0; width: 100%; background: #e0464e; transition: width .2s, background .3s; }
+#hptext { position: relative; display: block; text-align: center; font-size: 10.5px; line-height: 14px; font-weight: 600; text-shadow: 0 1px 2px #000; }
+#hurt { position: fixed; inset: 0; pointer-events: none; opacity: 0; transition: opacity .35s; background: radial-gradient(ellipse at center, transparent 45%, rgba(200, 20, 20, 0.75)); }
+#death { display: none; margin: -6px 0 14px; padding: 10px; border-radius: 10px; background: #5a1a1a99; color: #ffd5d5; font-weight: 600; }
+#death::before { content: "You perished: "; font-weight: 400; opacity: .8; }

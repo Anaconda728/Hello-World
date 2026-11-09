@@ -12,12 +12,14 @@
 <body>
   <div id="game"></div>
   <div id="underwater"></div>
+  <div id="hurt"></div>
 
   <div id="hud">
     <div id="info"></div>
     <div id="crosshair"></div>
     <div id="toast"></div>
     <div id="bottom">
+      <div id="health"><div id="hpfill"></div><span id="hptext"></span></div>
       <div id="brush"></div>
       <div id="hotbar"></div>
     </div>
@@ -27,17 +29,18 @@
     <div class="panel">
       <h1>Driftland</h1>
       <p class="tag">Rolling hills you can dig, shape and build on.</p>
+      <div id="death"></div>
       <div id="loading">Shaping the land…</div>
       <button id="play" disabled>Play</button>
       <div class="controls">
         <div><b>WASD</b> move</div><div><b>Mouse</b> look</div>
         <div><b>Space</b> jump / swim</div><div><b>Shift</b> sprint</div>
-        <div><b>Left click</b> dig / chop</div><div><b>Right click</b> build</div>
+        <div><b>Left click</b> dig / chop / attack</div><div><b>Right click</b> build</div>
         <div><b>1–6 / wheel</b> material</div><div><b>Q / E</b> brush size</div>
         <div><b>C</b> creative mode</div><div><b>F</b> fly (creative)</div>
         <div><b>Esc</b> pause</div>
       </div>
-      <p class="hint">Digging gives you materials, and building uses them. Chop trees for timber. Your world saves in this browser.</p>
+      <p class="hint">Digging gives you materials, and building uses them. Chop trees for timber. Careful when digging into cliffs, because they can collapse. Jackals hunt at night, and vipers hide in the grass. Your world saves in this browser.</p>
       <button id="newworld" class="secondary">New world</button>
       <p class="hint small">You need a keyboard and mouse to play.</p>
     </div>

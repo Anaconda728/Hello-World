@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { CS, H, WATER, MAT, MAT_INFO, HOTBAR } from './constants.js';
 import { World } from './world.js';
 import { Player, EYE } from './player.js';
+import { Creatures } from './creatures.js';
+import { Hazards } from './hazards.js';
 
 const SAVE_KEY = 'driftland-save-v1';
 const RENDER_RADIUS = 4;
@@ -96,6 +98,10 @@ if (save?.player) {
   player.pos.copy(spawn);
 }
 
+const creatures = new Creatures(scene, world);
+const hazards = new Hazards(scene, world);
+player.health = save?.health ?? player.maxHealth;
+
 const inv = save?.inv?.length === 8 ? save.inv.slice() : new Array(8).fill(0);
 let creative = !!save?.creative;
 let time = save?.time ?? 0.3;      // in days; 0.25 = sunrise
@@ -103,11 +109,13 @@ let sel = 0;
 let brush = 2;
 let locked = false;
 let digging = false, building = false, cooldown = 0;
+let dead = false, sinceHurt = 99, regenT = 0;
 
 // ---------- HUD ----------
 const $ = (id) => document.getElementById(id);
 const hotbarEl = $('hotbar'), infoEl = $('info'), brushEl = $('brush'), toastEl = $('toast');
 const menu = $('menu'), playBtn = $('play'), loadingEl = $('loading');
+const hpFill = $('hpfill'), hpText = $('hptext'), hurtEl = $('hurt'), deathEl = $('death');
 const slots = HOTBAR.map((m, i) => {
   const el = document.createElement('div');
   el.className = 'slot';
@@ -131,12 +139,53 @@ function toast(msg) {
 }
 updateHotbar();
 
+function updateHealth() {
+  const f = Math.max(0, player.health) / player.maxHealth;
+  hpFill.style.width = `${f * 100}%`;
+  hpFill.style.background = f > 0.5 ? '#e0464e' : f > 0.25 ? '#e6873a' : '#f0c23c';
+  hpText.textContent = creative ? 'Creative' : `${Math.ceil(Math.max(0, player.health))} / ${player.maxHealth}`;
+}
+updateHealth();
+
+// ---------- health ----------
+const knock = new THREE.Vector3();
+function damage(amount, cause, from) {
+  if (creative || dead || amount <= 0) return;
+  player.health -= amount;
+  sinceHurt = 0;
+  hurtEl.style.opacity = Math.min(0.85, 0.35 + amount * 0.08);
+  setTimeout(() => (hurtEl.style.opacity = 0), 160);
+  if (from) {
+    knock.set(player.pos.x - from.x, 0, player.pos.z - from.z);
+    if (knock.lengthSq() > 1e-6) knock.normalize().multiplyScalar(5);
+    player.vel.x += knock.x; player.vel.z += knock.z;
+    player.vel.y = Math.max(player.vel.y, 3);
+  }
+  updateHealth();
+  if (player.health <= 0) {
+    dead = true;
+    deathEl.textContent = `${cause}.`;
+    deathEl.style.display = 'block';
+    playBtn.textContent = 'Respawn';
+    document.exitPointerLock();
+  }
+}
+function respawn() {
+  dead = false;
+  player.health = player.maxHealth;
+  player.pos.copy(spawn);
+  player.vel.set(0, 0, 0);
+  player.fallImpact = 0;
+  deathEl.style.display = 'none';
+  updateHealth();
+}
+
 // ---------- saving ----------
 let saveWarned = false;
 function saveGame() {
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify({
-      v: 1, seed, ops: world.ops, removedTrees: [...world.removedTrees], inv, creative, time,
+      v: 1, seed, ops: world.ops, removedTrees: [...world.removedTrees], inv, creative, time, health: player.health,
       player: { x: player.pos.x, y: player.pos.y, z: player.pos.z, yaw: player.yaw, pitch: player.pitch },
     }));
   } catch {
@@ -159,8 +208,9 @@ addEventListener('keydown', (e) => {
   else if (e.code === 'KeyC') {
     creative = !creative;
     if (!creative) player.flying = false;
-    toast(creative ? 'Creative mode: unlimited materials, F to fly' : 'Survival mode');
+    toast(creative ? 'Creative mode: unlimited materials, no damage, F to fly' : 'Survival mode');
     updateHotbar();
+    updateHealth();
   } else if (e.code === 'KeyF') {
     if (creative) { player.flying = !player.flying; toast(player.flying ? 'Flying' : 'Walking'); }
     else toast('Flying needs creative mode (C)');
@@ -170,6 +220,7 @@ addEventListener('keydown', (e) => {
 addEventListener('keyup', (e) => keys.delete(e.code));
 
 playBtn.addEventListener('click', () => {
+  if (dead) respawn();
   const r = canvas.requestPointerLock();
   if (r && r.catch) r.catch(() => toast('Click again to capture the mouse'));
 });
@@ -184,7 +235,7 @@ document.addEventListener('pointerlockchange', () => {
   menu.classList.toggle('hidden', locked);
   if (!locked) {
     keys.clear(); digging = building = false;
-    playBtn.textContent = 'Resume';
+    if (!dead) playBtn.textContent = 'Resume';
     saveGame();
   }
 });
@@ -236,12 +287,19 @@ function updateTarget() {
     if (c.mesh) objs.push(c.mesh);
     objs.push(...c.treeMeshes);
   }
+  objs.push(...creatures.roots());
   camera.getWorldDirection(dir);
   raycaster.set(camera.position, dir);
-  const hit = raycaster.intersectObjects(objs, false)[0];
+  const hit = raycaster.intersectObjects(objs, true)[0];
   target = null;
   highlight.visible = false;
   if (!hit) return;
+  let o = hit.object;
+  while (o && !o.userData.creature) o = o.parent;
+  if (o) {
+    if (hit.distance < 3.6) target = { creature: o.userData.creature, point: hit.point };
+    return;
+  }
   if (hit.object.userData.kind === 'tree') {
     const t = hit.object.userData.trees[hit.instanceId];
     if (t && t.alive) target = { tree: t, point: hit.point };
@@ -263,6 +321,12 @@ function overlapsPlayer(cpos, r) {
 
 function doDig() {
   if (!target) return;
+  if (target.creature) {
+    camera.getWorldDirection(dir);
+    creatures.hit(target.creature, 4, dir, ctx);
+    cooldown = 0.4;
+    return;
+  }
   if (target.tree) {
     world.removeTree(target.tree);
     inv[MAT.WOOD] += 6;
@@ -274,10 +338,11 @@ function doDig() {
   const counts = world.edit(0, p.x, p.y, p.z, brush, 0);
   for (let i = 1; i < 7; i++) inv[i] += counts[i];
   updateHotbar();
+  hazards.onDig(target.point, target.normal, brush, ctx);
 }
 
 function doBuild() {
-  if (!target || target.tree) return;
+  if (!target || target.tree || target.creature) return;
   const mat = HOTBAR[sel];
   if (!creative && inv[mat] <= 0) { toast(`No ${MAT_INFO[mat].name} left — dig some up first`); return; }
   const p = target.point.clone().addScaledVector(target.normal, brush * 0.75);
@@ -352,6 +417,10 @@ function updateClouds(dt) {
 }
 
 // ---------- main loop ----------
+const ctx = {
+  player, keys, creatures, toast, damage,
+  get night() { return sunDir.y < -0.05; },
+};
 let last = performance.now(), hudTimer = 0, ready = false;
 function pad2(n) { return String(n).padStart(2, '0'); }
 
@@ -371,16 +440,31 @@ function frame(now) {
     time += dt / DAY_LENGTH;
     player.update(dt, keys);
     if (player.pos.y < -20) { player.pos.copy(spawn); player.vel.set(0, 0, 0); toast('You fell out of the world'); }
+    if (player.fallImpact > 14) damage(Math.round((player.fallImpact - 14) * 1.4), 'Fell from a great height');
+    player.fallImpact = 0;
+    creatures.update(dt, ctx);
+    hazards.update(dt, ctx);
+    sinceHurt += dt;
+    if (sinceHurt > 6 && player.health < player.maxHealth && !dead) {
+      regenT += dt;
+      if (regenT > 3) { regenT = 0; player.health = Math.min(player.maxHealth, player.health + 1); updateHealth(); }
+    }
   }
   camera.position.set(player.pos.x, player.pos.y + EYE, player.pos.z);
+  if (hazards.shake > 0) {
+    const s = hazards.shake * 0.12;
+    camera.position.x += (Math.random() - 0.5) * s;
+    camera.position.y += (Math.random() - 0.5) * s;
+    camera.position.z += (Math.random() - 0.5) * s;
+  }
   camera.rotation.set(player.pitch, player.yaw, 0);
 
   if (locked && ready) {
     updateTarget();
     cooldown -= dt;
     if (cooldown <= 0 && (digging || building)) {
-      if (digging) doDig(); else doBuild();
       cooldown = 0.25;
+      if (digging) doDig(); else doBuild();
     }
   } else {
     highlight.visible = false;
@@ -401,4 +485,4 @@ function frame(now) {
 requestAnimationFrame(frame);
 
 // Handle for debugging from the console.
-window.driftland = { world, player, inv, scene, camera, get target() { return target; }, doDig, doBuild, setTime: (t) => { time = t; } };
+window.driftland = { world, player, inv, scene, camera, creatures, hazards, ctx, get target() { return target; }, doDig, doBuild, setTime: (t) => { time = t; } };

@@ -20,6 +20,9 @@ export class Player {
     this.flying = false;
     this.inWater = false;
     this.headUnder = false;
+    this.health = 20;
+    this.maxHealth = 20;
+    this.fallImpact = 0;   // strongest landing speed since last read
   }
 
   update(dt, keys) {
@@ -86,7 +89,10 @@ export class Player {
         n.copy(g).multiplyScalar(-1 / gl);            // points out of the ground
         if (n.y > 0.6) {
           p.y += pen / n.y;                           // walkable: resolve vertically, no sliding
-          if (v.y < 0) v.y = 0;
+          if (v.y < 0) {
+            if (!this.flying && !this.inWater) this.fallImpact = Math.max(this.fallImpact, -v.y);
+            v.y = 0;
+          }
           this.grounded = true;
         } else {
           p.addScaledVector(n, pen);
