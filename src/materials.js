@@ -448,6 +448,8 @@ export function initMaterials(renderer) {
   MAT.graffiti = new THREE.MeshStandardMaterial({ map: tex(ga, { repeat: false }), emissiveMap: tex(ga, { repeat: false }), emissive: 0xffffff, emissiveIntensity: 0.55, roughness: 0.8 });
   const fw = tex(ferryWindowTexture());
   MAT.ferryWin = new THREE.MeshStandardMaterial({ map: fw, emissiveMap: fw, emissive: 0xffffff, emissiveIntensity: 1.3, roughness: 0.3 });
+  MAT.grass = new THREE.MeshStandardMaterial({ color: 0x0b1f1a, roughness: 0.85, metalness: 0.05, emissive: 0x052a20, emissiveIntensity: 0.35 });
+  MAT.pond = new THREE.MeshStandardMaterial({ color: 0x02060c, roughness: 0.02, metalness: 1, envMapIntensity: 2.2 });
   MAT.fire = neonBasic(0xff7a1a, 3);
   MAT.firePool = MAT.pool.clone();
   MAT.firePool.color = new THREE.Color(0xff6a1a).multiplyScalar(0.9);
@@ -461,7 +463,7 @@ export function initMaterials(renderer) {
   MAT.marker = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffd23e).multiplyScalar(1.6), transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
   MAT.markerJob = MAT.marker.clone();
   MAT.markerJob.color = new THREE.Color(0xff2848).multiplyScalar(1.6);
-  MAT.scanFan = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xff2040).multiplyScalar(1.5), transparent: true, opacity: 0.12, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
+  MAT.scanFan = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xff2040).multiplyScalar(0.9), transparent: true, opacity: 0.06, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
   MAT.cable = new THREE.MeshStandardMaterial({ color: 0x07070b, roughness: 0.8, metalness: 0.3 });
   MAT.noPower = new THREE.SpriteMaterial({ map: labelTexture('⚡ NO POWER', '#ffb02e'), depthTest: false, toneMapped: false, color: new THREE.Color(1.5, 1.5, 1.5) });
   MAT.warnLabel = new THREE.SpriteMaterial({ map: labelTexture('⚠ NO ROAD', '#ff3a5c'), depthTest: false, toneMapped: false, color: new THREE.Color(1.5, 1.5, 1.5) });
@@ -491,5 +493,5 @@ export function animateMaterials(t) {
   MAT.flicker.color.setRGB(on, on * 0.17, on * 0.84);
   MAT.marker.opacity = 0.28 + Math.sin(t * 3) * 0.08;
   MAT.markerJob.opacity = 0.3 + Math.sin(t * 5) * 0.1;
-  MAT.scanFan.opacity = 0.1 + Math.sin(t * 8) * 0.03;
+  MAT.scanFan.opacity = 0.05 + Math.sin(t * 8) * 0.015;
 }

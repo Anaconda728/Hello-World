@@ -65,9 +65,10 @@ export class DriveMode {
     window.addEventListener('blur', () => this.keys.clear());
   }
 
-  enter({ x, z, heading = 0 }) {
+  enter({ x, z, y = 0, heading = 0 }) {
     this.active = true;
-    this.pos.set(x, 0, z);
+    this.pos.set(x, y, z);
+    this.vy = 0;
     this.vel.set(0, 0);
     this.heading = heading;
     this.body.visible = true;
@@ -118,7 +119,16 @@ export class DriveMode {
     this.pos.x += this.vel.x * dt;
     this.pos.z += this.vel.y * dt;
 
-    const hit = resolveCircle(this.pos, 1.5, this.ctx.city.obstaclesNear(this.pos.x, this.pos.z));
+    // highways: follow decks and ramps, fall if you drive off the end, bounce off barriers
+    const hw = this.ctx.city.highways;
+    const g = hw.groundAt(this.pos.x, this.pos.z, this.pos.y);
+    if (this.pos.y > g.h + 0.05) { this.vy -= 30 * dt; this.pos.y += this.vy * dt; }
+    if (this.pos.y <= g.h) { if (this.vy < -14) { this.shake = Math.min(1, -this.vy / 40); this.ctx.audio.thud(0.6); } this.pos.y = g.h; this.vy = 0; }
+    if (g.surf && this.pos.y - g.h < 0.6) {
+      const key = hw.constrain(this.pos, 1.4, g.surf);
+      if (key) { if (key === 'x') this.vel.x *= -0.3; else this.vel.y *= -0.3; this.vel.multiplyScalar(0.92); }
+    }
+    const hit = resolveCircle(this.pos, 1.5, this.ctx.city.obstaclesNear(this.pos.x, this.pos.z, this.pos.y));
     if (hit) {
       const vn = this.vel.x * hit.x + this.vel.y * hit.z;
       if (vn < 0) {
@@ -131,7 +141,7 @@ export class DriveMode {
 
     // visuals: hover bob, lean into turns
     const speed = this.vel.length();
-    this.body.position.set(this.pos.x, 0.25 + Math.sin(t * 3) * 0.06, this.pos.z);
+    this.body.position.set(this.pos.x, this.pos.y + 0.25 + Math.sin(t * 3) * 0.06, this.pos.z);
     this.body.rotation.set(0, this.heading, 0);
     this.car.rotation.z = THREE.MathUtils.lerp(this.car.rotation.z, -vL * 0.02 - this.steer * speedFactor * 0.06, 0.2);
     this.car.rotation.x = THREE.MathUtils.lerp(this.car.rotation.x, -throttle * 0.03, 0.1);
@@ -142,17 +152,17 @@ export class DriveMode {
     const sh = this.shake;
     const jitter = () => (Math.random() - 0.5) * sh * 0.6;
     if (this.camMode === 2) {
-      cam.position.set(this.pos.x + nf.x * 0.3, 1.45, this.pos.z + nf.y * 0.3);
-      cam.lookAt(this.pos.x + nf.x * 20, 1.3, this.pos.z + nf.y * 20);
+      cam.position.set(this.pos.x + nf.x * 0.3, this.pos.y + 1.45, this.pos.z + nf.y * 0.3);
+      cam.lookAt(this.pos.x + nf.x * 20, this.pos.y + 1.3, this.pos.z + nf.y * 20);
     } else {
       const back = this.camMode === 0 ? 9.5 : 18, up = this.camMode === 0 ? 3.4 : 7.5;
-      const want = new THREE.Vector3(this.pos.x - nf.x * back, up, this.pos.z - nf.y * back);
+      const want = new THREE.Vector3(this.pos.x - nf.x * back, this.pos.y + up, this.pos.z - nf.y * back);
       this.camPos.lerp(want, 1 - Math.exp(-dt * 6));
       const tmp = this.camPos.clone();
-      resolveCircle(tmp, 0.8, this.ctx.city.obstaclesNear(tmp.x, tmp.z));
+      resolveCircle(tmp, 0.8, this.ctx.city.obstaclesNear(tmp.x, tmp.z, tmp.y));
       this.camPos.x = tmp.x; this.camPos.z = tmp.z;
       cam.position.set(this.camPos.x + jitter(), this.camPos.y + jitter(), this.camPos.z + jitter());
-      cam.lookAt(this.pos.x + nf.x * 5, 1.4, this.pos.z + nf.y * 5);
+      cam.lookAt(this.pos.x + nf.x * 5, this.pos.y + 1.4, this.pos.z + nf.y * 5);
     }
     const fov = 66 + Math.min(speed / 95, 1) * 22 + (boosting ? 6 : 0);
     cam.fov += (fov - cam.fov) * (1 - Math.exp(-dt * 4));

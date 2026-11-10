@@ -223,7 +223,7 @@ export class Drones {
     beamMat.color = new THREE.Color(0x9fc4ff).multiplyScalar(0.6);
     this.beam = new THREE.InstancedMesh(cone, beamMat, 60);
     const fan = new THREE.BufferGeometry();
-    fan.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, -0.28, -1, 0, 0.28, -1, 0], 3));
+    fan.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, -0.17, -1, 0, 0.17, -1, 0], 3));
     fan.computeVertexNormals();
     this.fan = new THREE.InstancedMesh(fan, MAT.scanFan, 60);
     for (const m of [this.siren, this.beam, this.fan]) { m.frustumCulled = false; m.count = 0; scene.add(m); }
@@ -233,6 +233,10 @@ export class Drones {
       for (let k = 0; k < n; k++) this.ambient.push(this.make(type, null));
     }
     this.placed = new Map(); // placed-drone def -> agent
+    this.pursuers = [];      // hunting a wanted player
+    this.wrecks = [];        // shot-down drones falling out of the sky
+    this.stars = 0;
+    this.combat = null;      // set by main
     this.timer = 0;
     this.scanCd = 0;
     this.onScan = null;
@@ -242,6 +246,7 @@ export class Drones {
     if (type === 'enforcer') {
       const w = new PatrolWalker(this.city, 0, 5 + Math.random() * 3, 1.2, 3);
       w.type = type; w.home = home; w.alt = 17 + Math.random() * 9; w.phase = Math.random() * 10;
+      w.hp = 40; w.stunT = 0;
       return w;
     }
     const alt = type === 'ferry' ? 95 + Math.random() * 45 : 24 + Math.random() * 34;
@@ -263,7 +268,8 @@ export class Drones {
     }
   }
 
-  update(dt, t, focus, player) {
+  update(dt, t, focus, player, seen = false, chase = player) {
+    this.updatePursuit(dt, t, chase, seen);
     // sync deployed drones with the city's list
     const defs = new Set(this.city.placedDrones);
     for (const [def, a] of this.placed) if (!defs.has(def)) this.placed.delete(def);
@@ -292,7 +298,7 @@ export class Drones {
     for (const a of all) {
       if (!a.alive) continue;
       if (Math.hypot(a.pos.x - focus.x, a.pos.z - focus.z) > 900) continue; // far deployed drones idle
-      a.update(dt);
+      if (a.stunT > 0) { a.stunT -= dt; a.alt = Math.max(4, a.alt - 5 * dt); } else a.update(dt);
       if (!a.alive) continue;
       if (a.type === 'enforcer') {
         const y = a.alt + Math.sin(t * 0.8 + a.phase) * 1.2;
@@ -321,11 +327,133 @@ export class Drones {
         this.models[a.type].add(_m, a.color);
       }
     }
+    for (const d of [...this.pursuers, ...this.wrecks]) {
+      const wreck = !d.pursuer;
+      _p.copy(d.pos);
+      if (!wreck) _p.y += Math.sin(t * 2 + d.phase) * 0.4;
+      _q.setFromEuler(new THREE.Euler(wreck ? d.spin * 0.7 : 0, wreck ? d.spin : d.heading, wreck ? d.spin * 0.4 : 0, 'YXZ'));
+      const s = d.heavy ? 1.8 : 1;
+      _m.compose(_p, _q, _s.set(s, s, s));
+      this.models.enforcer.add(_m);
+      if (wreck || e >= 60) continue;
+      this.siren.setMatrixAt(e, _m);
+      this.siren.setColorAt(e, Math.sin(t * 14 + d.phase) > 0 ? col.setRGB(5, 0.2, 0.3) : col.setRGB(0.3, 0.8, 5));
+      _q.setFromEuler(new THREE.Euler(0.5, d.heading, 0, 'YXZ'));
+      _m.compose(_p, _q, _s.set(s, s, s));
+      this.beam.setMatrixAt(e, _m);
+      _m.compose(_p.set(0, -9999, 0), _q, _s.set(1, 1, 1));
+      this.fan.setMatrixAt(e, _m);
+      e++;
+    }
     for (const m of Object.values(this.models)) m.end();
     for (const m of [this.siren, this.beam, this.fan]) {
       m.count = e;
       m.instanceMatrix.needsUpdate = true;
       if (m.instanceColor) m.instanceColor.needsUpdate = true;
+    }
+  }
+
+  // ------------------------------------------------------------ combat
+  enforcers() {
+    const out = [];
+    for (const a of this.ambient) if (a.type === 'enforcer' && a.alive) out.push(a);
+    for (const a of this.placed.values()) if (a.type === 'enforcer' && a.alive) out.push(a);
+    return out;
+  }
+  collectTargets(out) {
+    const hostile = this.stars > 0;
+    const add = (a, x, y, z, r, list) => out.push({
+      kind: 'drone', sphere: true, x, y, z, r, alive: true, hostile,
+      hit: (dmg) => {
+        a.hp -= dmg;
+        if (this.stars === 0) this.alarm = true; // shooting at a patrol drone gets you noticed
+        if (a.hp <= 0) { this.destroy(a, list); return true; }
+        return false;
+      },
+      stun: (s) => { a.stunT = s; },
+    });
+    for (const a of this.enforcers()) add(a, a.pos.x, a.alt + 0.2, a.pos.z, 1.6, null);
+    for (const p of this.pursuers) if (p.hp > 0) add(p, p.pos.x, p.pos.y, p.pos.z, p.heavy ? 2.6 : 1.6, this.pursuers);
+  }
+  destroy(a, list) {
+    const pos = new THREE.Vector3(a.pos.x, a.pursuer ? a.pos.y : a.alt, a.pos.z);
+    this.combat?.burst(pos, 0xffa040, 30, 9);
+    this.combat?.boom(pos, a.heavy ? 4 : 2.5, 0xff7a2a);
+    this.wrecks.push({ pos, vel: new THREE.Vector3((Math.random() - 0.5) * 6, 2, (Math.random() - 0.5) * 6), spin: 0, heavy: !!a.heavy, t: 0 });
+    if (list) { const k = list.indexOf(a); if (k >= 0) list.splice(k, 1); } else a.alive = false;
+  }
+  // Does any drone have eyes on the player? Inside an alley they only spot you up close.
+  anySees(p, hidden) {
+    const r = hidden ? 16 : 95;
+    for (const d of this.pursuers) if (d.hp > 0 && Math.hypot(d.pos.x - p.x, d.pos.z - p.z) < r) return true;
+    for (const a of this.enforcers()) if (Math.hypot(a.pos.x - p.x, a.pos.z - p.z) < (hidden ? 12 : 40)) return true;
+    return false;
+  }
+  nearestEnforcerDist(p) {
+    let best = Infinity;
+    for (const a of this.enforcers()) best = Math.min(best, Math.hypot(a.pos.x - p.x, a.pos.z - p.z));
+    for (const d of this.pursuers) best = Math.min(best, Math.hypot(d.pos.x - p.x, d.pos.z - p.z));
+    return best;
+  }
+
+  // Pursuit flight: chase the player above the rooftops, circle them in the street, shoot.
+  updatePursuit(dt, t, player, seen) {
+    const city = this.city;
+    const want = player ? Math.min(12, this.stars * 2 + (this.stars >= 4 ? 2 : 0)) : 0;
+    while (player && this.pursuers.length < want) {
+      const a = Math.random() * Math.PI * 2, d = 140 + Math.random() * 60;
+      const heavy = this.stars >= 3 && this.pursuers.filter((p) => p.heavy).length < Math.floor(this.stars / 2);
+      this.pursuers.push({
+        pursuer: true, heavy, hp: heavy ? 170 : 45, stunT: 0, cd: 2 + Math.random() * 2, phase: Math.random() * 10,
+        pos: new THREE.Vector3(player.x + Math.cos(a) * d, 60, player.z + Math.sin(a) * d), heading: 0,
+        last: new THREE.Vector3(player.x, 0, player.z),
+      });
+    }
+    for (let k = this.pursuers.length - 1; k >= 0; k--) {
+      const d = this.pursuers[k];
+      if (!player || this.stars === 0) {
+        // stand down: climb and leave
+        d.pos.y += 15 * dt;
+        d.leaving = (d.leaving || 0) + dt;
+        if (d.leaving > 6) this.pursuers.splice(k, 1);
+        continue;
+      }
+      if (d.stunT > 0) { d.stunT -= dt; d.pos.y = Math.max(3, d.pos.y - 4 * dt); continue; }
+      if (seen) d.last.set(player.x, player.y || 0, player.z);
+      const orbit = d.heavy ? 18 : 12;
+      const ang = d.phase + t * (d.heavy ? 0.25 : 0.45);
+      const tx = d.last.x + Math.cos(ang) * orbit, tz = d.last.z + Math.sin(ang) * orbit;
+      // fly over buildings, drop into the street near the target
+      const b = city.buildingAt(Math.floor(d.pos.x / TILE), Math.floor(d.pos.z / TILE));
+      const roof = b ? b.height + 6 : 0;
+      const close = Math.hypot(d.pos.x - d.last.x, d.pos.z - d.last.z) < 30;
+      const ty = Math.max(roof, close ? (d.last.y || 0) + (d.heavy ? 16 : 11) : 34);
+      const sp = d.heavy ? 15 : 21;
+      const dx = tx - d.pos.x, dz = tz - d.pos.z, dist = Math.hypot(dx, dz) || 1;
+      const step = Math.min(dist, sp * dt);
+      d.pos.x += (dx / dist) * step; d.pos.z += (dz / dist) * step;
+      d.pos.y += (ty - d.pos.y) * Math.min(1, dt * 1.5);
+      d.heading = Math.atan2(player.x - d.pos.x, player.z - d.pos.z);
+      d.cd -= dt;
+      const pd = Math.hypot(player.x - d.pos.x, player.z - d.pos.z);
+      if (seen && this.combat && d.cd <= 0 && pd < 70) {
+        d.cd = d.heavy ? 0.35 + Math.random() * 0.3 : 1.1 + Math.random() * 0.8;
+        const from = d.pos.clone(); from.y -= 0.4;
+        const to = new THREE.Vector3(player.x, (player.y || 0) + 1, player.z);
+        const dir = to.clone().sub(from), len = dir.length();
+        if (this.combat.wallDist(from, dir.normalize(), len) >= len - 1.5) {
+          this.combat.enemyShot(from, to, { dmg: d.heavy ? 8 : 6, speed: 85, color: 0xff2040, spread: d.heavy ? 0.04 : 0.025 });
+        }
+      }
+    }
+    // wrecks fall, spin, explode on impact
+    for (let k = this.wrecks.length - 1; k >= 0; k--) {
+      const w = this.wrecks[k];
+      w.t += dt; w.vel.y -= 22 * dt; w.pos.addScaledVector(w.vel, dt); w.spin += dt * 9;
+      if (w.pos.y <= 0.5 || w.t > 6) {
+        this.combat?.explode(new THREE.Vector3(w.pos.x, 0.8, w.pos.z), w.heavy ? 5 : 3, 0, { owner: 'none' });
+        this.wrecks.splice(k, 1);
+      }
     }
   }
 

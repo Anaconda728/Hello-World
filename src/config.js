@@ -3,7 +3,7 @@
 export const TILE = 12;              // metres per tile
 export const CHUNK = 16;             // tiles per chunk side
 export const CHUNK_W = CHUNK * TILE; // metres per chunk side
-export const VERSION = '1.0.0';
+export const VERSION = '1.1.0';
 
 // Graphics presets: laptops with integrated GPUs should use low/medium.
 export const QUALITY = {
@@ -50,6 +50,7 @@ export const TOOLS = {
   bulldoze:  { name: 'Demolish',    icon: '✖', cost: 0,    size: 1, key: 'X', color: '#ff4060', desc: 'Drag a box to demolish. Refunds 50% of your own buildings.' },
 };
   // generated only (never in the toolbar): dark alleys where gangs hang out
+TOOLS.park = { name: 'Neon Park', icon: '♣', cost: 0, size: 1, key: '', color: '#39ff9c', desc: 'Open parkland.', hidden: true };
 TOOLS.alley = { name: 'Dark Alley', icon: '░', cost: 0, size: 1, key: '', color: '#ff2848', desc: 'Gang hangout.', hidden: true };
 export const TOOL_ORDER = Object.keys(TOOLS).filter((k) => !TOOLS[k].hidden);
 
@@ -62,7 +63,7 @@ export const DRONE_TYPES = {
 };
 export const DRONE_ORDER = Object.keys(DRONE_TYPES);
 export const MAX_LEVEL = 6;
-export const NO_ROAD_NEEDED = new Set(['plaza', 'billboard', 'powercore', 'alley']);
+export const NO_ROAD_NEEDED = new Set(['plaza', 'billboard', 'powercore', 'alley', 'park']);
 
 // What each building contributes when owned + connected.
 export function buildingYield(type, level) {

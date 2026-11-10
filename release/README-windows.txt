@@ -1,4 +1,4 @@
-NEON SPRAWL  v1.0.0  (Windows desktop edition)
+NEON SPRAWL  v1.1.0  (Windows desktop edition)
 ==============================================
 A dark-neon cyberpunk city builder. Build an endless megacity from above, then walk or
 drive its rain-soaked streets.
@@ -24,11 +24,18 @@ Build:  Left click place / drag    Right-drag orbit    WASD pan (Shift = fast)
         Q/E rotate    Mouse wheel zoom    1-9, 0, - build tools    N drone
         G grow    X demolish
 Walk:   WASD move    Mouse look    Shift run    Space jump (twice = double jump)
+        Left click fire    Right click aim    1-5 / wheel weapons    R reload
         Q dash    E talk    X optic overlay    M clear map marker    V summon car
 Drive:  W/S throttle/brake    A/D steer    Space drift    Shift boost    C camera
         X optic overlay    F get out
 Always: B builder    Esc menu (save, settings, quit)    H hide HUD    P quick save
 Window: F11 or Alt+Enter toggles fullscreen
+
+WANTED LEVEL
+------------
+Attacking civilians, robots or patrol drones makes you wanted. Lose the drones by
+breaking contact (hide in a dark alley to go faster), or walk up to a Data Spire or
+Chrome Clinic and press E to pay to wipe your record.
 
 FIRST STEPS
 -----------

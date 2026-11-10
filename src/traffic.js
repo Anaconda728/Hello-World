@@ -46,6 +46,7 @@ export class Walker {
     DIRS.forEach(([dx, dz], d) => { if (this.city.isRoad(i + dx, j + dz)) opts.push(d); });
     if (!opts.length) { this.alive = false; return; }
     this.i = i; this.j = j;
+    this.dead = -1; this.pinned = false; this.panic = 0;
     this.dir = opts[Math.floor(Math.random() * opts.length)];
     const c = tileCenter(i, j);
     const [dx, dz] = DIRS[this.dir];
@@ -163,6 +164,7 @@ export class Traffic {
       w.visor = Math.random() < 0.55;
       w.arm = Math.random() < 0.3;
       w.phase = Math.random() * 10;
+      w.dead = -1; w.panic = 0; w.baseSpeed = w.speed;
       const vc = visorCols[k % visorCols.length];
       this.pedVisor.setColorAt(k, c.setRGB(vc[0], vc[1], vc[2]));
       this.pedArm.setColorAt(k, c.setRGB(vc[2] * 0.8 + 0.4, vc[1] * 0.8 + 0.4, vc[0] * 0.8 + 0.4));
@@ -240,7 +242,12 @@ export class Traffic {
     scene.add(this.steam);
     this.steamTimer = 0;
 
-    this.instanced = [this.carBody, this.carLights, this.pedBody, this.pedUmb, this.pedVisor, this.pedArm, this.airBody, this.airLights];
+    // highway traffic: fast cars streaming along the elevated decks
+    this.hwBody = new THREE.InstancedMesh(body, bodyMat, 70);
+    this.hwLights = new THREE.InstancedMesh(lights, lightMat, 70);
+    for (let k = 0; k < 70; k++) this.hwBody.setColorAt(k, c.set(palette[(k * 5) % palette.length]));
+    this.hw = Array.from({ length: 70 }, () => ({ line: null, s: 0, dir: 1, lane: 0, speed: 26 + Math.random() * 14 }));
+    this.instanced = [this.hwBody, this.hwLights, this.carBody, this.carLights, this.pedBody, this.pedUmb, this.pedVisor, this.pedArm, this.airBody, this.airLights];
     for (const m of this.instanced) {
       m.frustumCulled = false;
       m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -273,6 +280,20 @@ export class Traffic {
     }
   }
 
+  // Pedestrians can be hurt (one hit drops them) and panic at gunfire.
+  collectTargets(out) {
+    for (const w of this.peds) {
+      if (!w.alive || w.dead >= 0) continue;
+      out.push({
+        kind: 'ped', x: w.pos.x, y: 0.2, z: w.pos.z, r: 0.38, h: 1.85, alive: true, hostile: false,
+        hit: () => { w.dead = 0; w.pinned = true; return true; },
+      });
+    }
+  }
+  noise(pos, r) {
+    for (const w of this.peds) if (w.alive && w.dead < 0 && Math.hypot(w.pos.x - pos.x, w.pos.z - pos.z) < r) w.panic = 8;
+  }
+
   update(dt, t, focus) {
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0) {
@@ -297,14 +318,23 @@ export class Traffic {
     n = 0;
     for (const w of this.peds) {
       if (!w.alive) continue;
-      w.update(dt);
-      if (!w.alive) continue;
-      const bob = Math.abs(Math.sin(t * 7 + w.phase)) * 0.05;
-      tmpP.set(w.pos.x, 0.22 + bob, w.pos.z);
+      let lie = 0;
+      if (w.dead >= 0) {
+        w.dead += dt;
+        if (w.dead > 20) { w.alive = false; w.pinned = false; continue; }
+        lie = Math.min(1, w.dead * 3);
+      } else {
+        if (w.panic > 0) { w.panic -= dt; w.speed = w.baseSpeed * 3.2; } else w.speed = w.baseSpeed;
+        w.update(dt);
+        if (!w.alive) continue;
+      }
+      const bob = lie ? 0 : Math.abs(Math.sin(t * (w.panic > 0 ? 16 : 7) + w.phase)) * 0.05;
+      tmpP.set(w.pos.x, 0.22 + bob + lie * 0.25, w.pos.z);
       tmpQ.setFromAxisAngle(UP, w.heading);
+      if (lie) tmpQ.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -lie * Math.PI / 2));
       tmpM.compose(tmpP, tmpQ, tmpS.set(1, 1, 1));
       this.pedBody.setMatrixAt(n, tmpM);
-      tmpM.compose(tmpP, tmpQ, tmpS.setScalar(w.umbrella ? 1 : 0));
+      tmpM.compose(tmpP, tmpQ, tmpS.setScalar(w.umbrella && !lie ? 1 : 0));
       this.pedUmb.setMatrixAt(n, tmpM);
       tmpM.compose(tmpP, tmpQ, tmpS.setScalar(w.visor ? 1 : 0));
       this.pedVisor.setMatrixAt(n, tmpM);
@@ -368,6 +398,36 @@ export class Traffic {
       this.airLights.setMatrixAt(k, tmpM);
       k++;
     }
+    // highway cars
+    const hw = this.city.highways;
+    this.hwTimer = (this.hwTimer || 0) - dt;
+    if (this.hwTimer <= 0) { this.hwTimer = 1.5; this.hwLines = hw.linesNear(focus.x, focus.z, 420); }
+    let hn = 0;
+    for (const car of this.hw) {
+      const lines = this.hwLines || [];
+      const along = (l) => (l.axis === 'x' ? focus.x : focus.z);
+      const stale = !car.line || !lines.some((l) => l.axis === car.line.axis && l.k === car.line.k) || Math.abs(car.s - along(car.line)) > 440;
+      if (stale) {
+        if (!lines.length) { car.line = null; continue; }
+        car.line = lines[Math.floor(Math.random() * lines.length)];
+        car.dir = Math.random() < 0.5 ? 1 : -1;
+        car.lane = car.dir * (Math.random() < 0.5 ? 1.5 : 4);
+        car.s = along(car.line) + (Math.random() * 2 - 1) * 420;
+      }
+      car.s += car.speed * car.dir * dt;
+      const L = car.line, c = hw.centre(L.k);
+      const y = hw.deck(L.axis, L.k, car.s), yA = hw.deck(L.axis, L.k, car.s + car.dir * 2);
+      const pitch = Math.atan2(yA - y, 2);
+      const x = L.axis === 'x' ? car.s : c - car.lane, z = L.axis === 'x' ? c + car.lane : car.s;
+      const head = L.axis === 'x' ? (car.dir > 0 ? Math.PI / 2 : -Math.PI / 2) : (car.dir > 0 ? 0 : Math.PI);
+      tmpP.set(x, y + 0.2, z);
+      tmpQ.setFromEuler(new THREE.Euler(-pitch, head, 0, 'YXZ'));
+      tmpM.compose(tmpP, tmpQ, tmpS.set(1, 1, 1));
+      this.hwBody.setMatrixAt(hn, tmpM);
+      this.hwLights.setMatrixAt(hn, tmpM);
+      hn++;
+    }
+    this.hwBody.count = this.hwLights.count = hn;
     for (const m of this.instanced) m.instanceMatrix.needsUpdate = true;
   }
 }

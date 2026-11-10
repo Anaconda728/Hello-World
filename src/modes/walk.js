@@ -19,6 +19,7 @@ export class WalkMode {
     this.doubleUsed = false;
     this.kick = 0;
     this.scanTimer = 0;
+    this.floor = 0;
     const dom = ctx.renderer.domElement;
     dom.addEventListener('click', () => { if (this.active && !ctx.paused && document.pointerLockElement !== dom) dom.requestPointerLock?.(); });
     document.addEventListener('pointerlockchange', () => {
@@ -26,7 +27,7 @@ export class WalkMode {
     });
     window.addEventListener('mousemove', (e) => {
       if (!this.active || document.pointerLockElement !== dom) return;
-      const k = 0.0022 * SETTINGS.mouseSens;
+      const k = 0.0022 * SETTINGS.mouseSens * (ctx.combat?.aiming ? 0.55 : 1);
       this.yaw -= e.movementX * k;
       this.pitch = THREE.MathUtils.clamp(this.pitch - e.movementY * k, -1.5, 1.5);
     });
@@ -34,7 +35,7 @@ export class WalkMode {
       if (!this.active || ctx.paused) return;
       this.keys.add(e.code);
       if (e.repeat) return;
-      if (e.code === 'Space' && this.pos.y > 0.05 && !this.doubleUsed) {
+      if (e.code === 'Space' && this.pos.y > this.floor + 0.05 && !this.doubleUsed) {
         this.doubleUsed = true;
         this.vel.y = 7.5;
         this.kick = 1;
@@ -46,9 +47,10 @@ export class WalkMode {
     window.addEventListener('blur', () => this.keys.clear());
   }
 
-  enter({ x, z, yaw = 0 }) {
+  enter({ x, z, y = 0, yaw = 0 }) {
     this.active = true;
-    this.pos.set(x, 0, z);
+    this.pos.set(x, y || 0, z);
+    this.floor = this.pos.y;
     this.vel.set(0, 0, 0);
     this.yaw = yaw; this.pitch = 0.08;
     const cam = this.ctx.camera;
@@ -116,28 +118,33 @@ export class WalkMode {
       this.vel.x = this.dashDir.x * DASH_SPEED;
       this.vel.z = this.dashDir.y * DASH_SPEED;
     } else {
-      const a = 1 - Math.exp(-dt * (this.pos.y > 0 ? 2 : 12));
+      const a = 1 - Math.exp(-dt * (this.pos.y > this.floor + 0.05 ? 2 : 12));
       this.vel.x += (wantX - this.vel.x) * a;
       this.vel.z += (wantZ - this.vel.z) * a;
     }
-    if (k.has('Space') && this.pos.y <= 0) { this.vel.y = 5.4; this.doubleUsed = false; }
+    if (k.has('Space') && this.pos.y <= this.floor + 0.02) { this.vel.y = 5.4; this.doubleUsed = false; }
     this.vel.y -= 16 * dt;
     this.pos.addScaledVector(this.vel, dt);
-    if (this.pos.y < 0) { this.pos.y = 0; this.vel.y = 0; this.doubleUsed = false; }
-    resolveCircle(this.pos, 0.45, this.ctx.city.obstaclesNear(this.pos.x, this.pos.z));
+    // highways: stand on decks and ramps, stay between the barriers
+    const hw = this.ctx.city.highways;
+    const g = hw.groundAt(this.pos.x, this.pos.z, this.pos.y);
+    this.floor = g.h;
+    if (this.pos.y < g.h) { this.pos.y = g.h; this.vel.y = 0; this.doubleUsed = false; }
+    if (g.surf && this.pos.y - g.h < 0.6) hw.constrain(this.pos, 0.45, g.surf);
+    resolveCircle(this.pos, 0.45, this.ctx.city.obstaclesNear(this.pos.x, this.pos.z, this.pos.y));
 
     const moving = Math.hypot(this.vel.x, this.vel.z);
     this.bob += Math.min(moving, 10) * dt * 1.9;
-    const bobY = this.pos.y <= 0 ? Math.sin(this.bob) * 0.05 * Math.min(1, moving / 4) : 0;
+    const bobY = this.pos.y <= this.floor + 0.02 ? Math.sin(this.bob) * 0.05 * Math.min(1, moving / 4) : 0;
     const cam = this.ctx.camera;
     cam.position.set(this.pos.x, this.pos.y + EYE + bobY + 0.2, this.pos.z);
     cam.rotation.order = 'YXZ';
     cam.rotation.set(this.pitch, this.yaw, 0);
     this.kick = Math.max(0, this.kick - dt * 4);
-    const fov = 72 + this.kick * 10 + (run ? 3 : 0);
+    const fov = (this.ctx.combat?.aiming ? 46 : 72) + this.kick * 10 + (run ? 3 : 0);
     if (Math.abs(cam.fov - fov) > 0.05) { cam.fov += (fov - cam.fov) * Math.min(1, dt * 10); cam.updateProjectionMatrix(); }
     this.ctx.audio.setEngine(0);
-    this.ctx.ui.setAugments(1 - this.dashCd / DASH_CD, !this.doubleUsed || this.pos.y <= 0);
+    this.ctx.ui.setAugments(1 - this.dashCd / DASH_CD, !this.doubleUsed || this.pos.y <= this.floor + 0.02);
 
     this.scanTimer -= dt;
     if (this.scanTimer <= 0) { this.scanTimer = 0.15; this.ctx.ui.setScan(this.scan()); }

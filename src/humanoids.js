@@ -54,8 +54,9 @@ export class Humanoids {
     const P = this.parts;
     _q.setFromAxisAngle(_v.set(0, 1, 0), pose.heading);
     const bob = Math.abs(Math.sin(pose.walk)) * 0.04 * pose.amount;
-    _m.compose(_v.set(pose.x, (pose.y || 0) + bob, pose.z), _q, _one.set(s, s, s));
+    _m.compose(_v.set(pose.x, (pose.y || 0) + bob + (pose.lie || 0) * 0.15, pose.z), _q, _one.set(s, s, s));
     _one.set(1, 1, 1);
+    if (pose.lie) _m.multiply(_r.makeRotationX(-pose.lie * Math.PI / 2)); // fallen, lying on its back
     const set = (im, idx, local) => { _p.multiplyMatrices(_m, local); im.setMatrixAt(idx, _p); };
 
     const sw = Math.sin(pose.walk) * 0.6 * pose.amount;

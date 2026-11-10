@@ -764,7 +764,60 @@ export function genAlley(level, seed, cx, cz) {
   return { parts: P.merge(), anim, height: 6, rects, open: [dx, dz] };
 }
 
+// ---------------------------------------------------------------- park (open districts)
+// Dark lawn crossed by glowing paths, neon trees, lamps, now and then a mirror pond or holo sculpture.
+export function genPark(level, seed, cx, cz) {
+  const r = mulberry32(seed);
+  const P = new Parts();
+  const anim = [];
+  P.box('grass', TILE, 0.12, TILE, cx, 0.06, cz, 0, false);
+  // paths run to the tile edges so neighbouring park tiles join up
+  const pathKey = r.chance(0.5) ? 'dim_cyan' : 'dim_green';
+  if (r.chance(0.7)) P.box(pathKey, TILE, 0.03, 1.2, cx, 0.13, cz, 0, false);
+  if (r.chance(0.7)) P.box(pathKey, 1.2, 0.03, TILE, cx, 0.13, cz, 0, false);
+  const feature = r();
+  if (feature < 0.25) {
+    const pond = new THREE.CircleGeometry(r.range(2.6, 3.6), 28);
+    pond.rotateX(-Math.PI / 2);
+    P.geo('pond', pond, cx + r.range(-1, 1), 0.14, cz + r.range(-1, 1));
+    P.cyl('neon_cyan', 3.7, 3.7, 0.06, cx, 0.13, cz, 32, false);
+  } else if (feature < 0.4) {
+    P.cyl('metal', 1, 1.3, 0.8, cx, 0.12, cz, 12, false);
+    const g = new THREE.Group();
+    const o = new THREE.Mesh(octaGeo, MAT.holoWire);
+    o.scale.setScalar(1.4);
+    g.add(o);
+    g.position.set(cx, 3.4, cz);
+    anim.push({ obj: g, spin: 0.7, bob: 0.5 });
+  }
+  const leaf = r.chance(0.6) ? 'leafC' : 'leafM';
+  const nTrees = feature < 0.4 ? r.int(1, 3) : r.int(2, 5);
+  for (let k = 0; k < nTrees; k++) {
+    const x = cx + r.range(-4.6, 4.6), z = cz + r.range(-4.6, 4.6);
+    if (Math.abs(x - cx) < 1.4 || Math.abs(z - cz) < 1.4) continue; // keep paths clear
+    const th = r.range(2.4, 4.4);
+    P.cyl('metal', 0.12, 0.2, th, x, 0.12, z, 6, false);
+    const crown = new THREE.IcosahedronGeometry(r.range(1.2, 2.1), 0);
+    crown.rotateY(r() * 3);
+    P.geo(leaf, crown, x, 0.12 + th + 0.9, z);
+  }
+  if (r.chance(0.5)) {
+    const sx = cx + 2.2, sz = cz - 2.2;
+    P.boxB('metal', 1.8, 0.45, 0.55, sx, 0.12, sz);
+  }
+  if (r.chance(0.45)) {
+    const lx = cx - 1.2, lz = cz + 1.2;
+    P.cyl('metal', 0.06, 0.09, 4, lx, 0.12, lz, 6, false);
+    P.geo('lamp', new THREE.SphereGeometry(0.25, 8, 6), lx, 4.3, lz);
+    const pool = new THREE.PlaneGeometry(7, 7);
+    pool.rotateX(-Math.PI / 2);
+    P.geo('pool', pool, lx, 0.15, lz);
+  }
+  return { parts: P.merge(), anim, height: 6, rects: [] };
+}
+
 export const GENERATORS = {
+  park: genPark,
   alley: genAlley,
   powercore: genPowercore,
   dataspire: genDataspire,

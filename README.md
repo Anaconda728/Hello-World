@@ -4,20 +4,20 @@ A dark-neon cyberpunk city builder that runs in the browser. Raise towers, fusio
 above, then drop to street level and **walk** or **drive** through an endless rain-soaked megacity. The sprawl
 keeps generating dense city in every direction as you move.
 
-## Download and play (v1.0.0)
+## Download and play (v1.1.0)
 
-1. Download [`releases/NeonSprawl-v1.0.0.zip`](releases/NeonSprawl-v1.0.0.zip) (about 240 KB).
+1. Download [`releases/NeonSprawl-v1.1.0.zip`](releases/NeonSprawl-v1.1.0.zip) (about 240 KB).
 2. Unzip it anywhere and double-click **`Play Neon Sprawl.html`**.
 
 That's it: it runs in your browser straight from the folder, with no install, launcher or internet
 connection. Best in an up-to-date Chrome, Edge or Firefox. `README.txt` in the zip covers controls and
 troubleshooting. If it stutters on a laptop, set **Settings → Graphics quality** to Low or Medium.
 
-## Windows desktop app (v1.0.0)
+## Windows desktop app (v1.1.0)
 
 A standalone Windows build wraps the same game in Electron: its own window, no browser needed.
 
-1. Extract `NeonSprawl-v1.0.0-win64.zip` (right-click → Extract All).
+1. Extract `NeonSprawl-v1.1.0-win64.zip` (right-click → Extract All).
 2. Run **`Neon Sprawl.exe`**. The build isn't code-signed, so on first launch SmartScreen may say
    "Windows protected your PC": click **More info → Run anyway**.
 
@@ -71,6 +71,35 @@ Bump `version` in `package.json` and `VERSION` in `src/config.js` together; the 
 | **Walk** (`F`) | WASD move · Shift run · Space jump, Space again in mid-air for a kinetic double jump · `Q` reflex dash · `E` talk · `M` clear marker · `X` optic overlay · mouse look · `V` summon car |
 | **Drive** (`V`) | W/S throttle/brake · A/D steer · Space drift · Shift boost · `C` camera · `X` optic overlay · `F` step out |
 | Anywhere | `B` builder · `Esc` menu · `H` hide HUD · `P` quick save |
+
+## Combat and the law
+
+| Weapon | Key | Notes |
+|--------|-----|-------|
+| Mono-Katana | `1` | Melee sweep, hits everything in front of you |
+| SP-9 Smart Pistol | `2` | Smart-link bends shots toward the target nearest the crosshair |
+| HX-7 Plasma Rifle | `3` | Hold to fire; bolts splash |
+| Tachyon Railgun | `4` | Slow, devastating, pierces every target in the line |
+| EMP Grenade | `5` | Area damage; wrecks and stuns drones; refills over time |
+
+LMB fire · RMB aim · wheel cycles · `R` reload · press a weapon's key again to holster.
+Your shield regenerates out of combat. If you flatline you wake up at the nearest Chrome Clinic, minus 10% of
+your credits.
+
+Gangs turn hostile if you attack or shoot near them, sometimes just for loitering on their turf, and crews
+occasionally **ambush** you in the street. Hostile gang members are fair game.
+
+**Wanted level**: unprovoked attacks on pedestrians, robots, calm gang members or enforcer drones (or running
+people over) light up stars, double if a patrol sees it. Enforcer drones hunt and shoot you; heavy drones
+join at 3+ stars. To shake them: break contact until the evade meter fills (three times faster hiding in a
+dark alley), pay to wipe your record at a **Data Spire** or **Chrome Clinic** (walk up and press `E`), or
+flatline.
+
+## The city
+
+Dense downtowns alternate with **open districts** of parkland and empty lots, which are good places to build.
+**Elevated highways** on two levels (14 m and 24 m) cross over each other on pylons. Where a highway dips to
+street level is an on-ramp: drive or walk up it.
 
 ## Life on the streets
 

@@ -10,6 +10,7 @@ import { GENERATORS } from './buildings.js';
 import { Parts, meshesFromPartMaps } from './geom.js';
 import { MAT } from './materials.js';
 import { mulberry32, randSeed, hash3, hashInt, vnoise } from './rng.js';
+import { Highways } from './highways.js';
 
 const mod = (a, n) => ((a % n) + n) % n;
 export const CORPS = ['Arasaki-Kemp', 'Omnidyne', 'Helix Biotic', 'Vantablack Sys', 'Kuroshio Heavy', 'Neural+', 'Sunward Orbital', 'Mirrorgate', 'Tessellate', 'Black Lotus', 'Cobalt Meridian', 'Zentek'];
@@ -42,6 +43,7 @@ export class City {
     this.warnRoot = new THREE.Group();
     scene.add(this.root, this.animRoot, this.warnRoot);
     this.listeners = new Set();
+    this.highways = new Highways(this);
     this.reset(1);
   }
 
@@ -75,6 +77,8 @@ export class City {
     const S = SUPERBLOCK, mi = mod(i, S), mj = mod(j, S);
     if (mi === 0 || mj === 0) return true;
     const sx = Math.floor(i / S), sz = Math.floor(j / S), s = this.seed;
+    // open districts keep only the main avenues: big blocks of parkland and empty lots
+    if (this.openness(sx * S + S / 2, sz * S + S / 2) > 0.55) return false;
     if (hash3(sx * 7 + 1, sz * 13 + 5, s) < 0.8 && mi === 4 + Math.floor(hash3(sx, sz + 99, s) * 5)) return true;
     if (hash3(sx * 11 + 3, sz * 5 + 9, s) < 0.8 && mj === 4 + Math.floor(hash3(sx + 77, sz, s) * 5)) return true;
     return false;
@@ -82,6 +86,11 @@ export class City {
   inFreeZone(i, j) { return this.freeZone && i >= -FREE_ZONE && i < FREE_ZONE && j >= -FREE_ZONE && j < FREE_ZONE; }
   downtown(i, j) { return vnoise(this.seed, i / 38, j / 38) * 0.75 + vnoise(this.seed + 7, i / 11, j / 11) * 0.25; }
   tech(i, j) { return vnoise(this.seed + 99, i / 24, j / 24); }
+  // Open districts (parks, empty lots, low-rise) vs dense ones; downtown is never open.
+  openness(i, j) {
+    const o = vnoise(this.seed + 300, i / 34, j / 34);
+    return this.downtown(i, j) > 0.62 ? 0 : o;
+  }
 
   // ------------------------------------------------------------ tile access
   chunkAt(i, j) { return this.chunks.get(chunkKey(chunkCoord(i), chunkCoord(j))); }
@@ -147,6 +156,16 @@ export class City {
     for (let b = 0; b < CHUNK; b++) for (let a = 0; a < CHUNK; a++) {
       const i = c.i0 + a, j = c.j0 + b;
       if (!this.tileFreeIn(c, i, j)) continue;
+      const S = SUPERBLOCK;
+      if (this.openness(Math.floor(i / S) * S + S / 2, Math.floor(j / S) * S + S / 2) > 0.55) {
+        // open district: parkland, empty lots, the odd low-rise or billboard
+        const roll = r();
+        if (roll < 0.5) this.addBuilding('park', i, j, { level: 1, seed: hashInt(i, j, this.seed + 23), owned: false });
+        else if (roll < 0.62) this.addBuilding('plaza', i, j, { level: 1, seed: hashInt(i, j, this.seed + 11), owned: false });
+        else if (roll < 0.74) this.addBuilding('habitat', i, j, { level: r.int(1, 2), seed: hashInt(i, j, this.seed + 11), owned: false });
+        else if (roll < 0.78) this.addBuilding('billboard', i, j, { level: 1, seed: hashInt(i, j, this.seed + 11), owned: false });
+        continue; // the rest stays as open lots
+      }
       const d = this.downtown(i, j);
       const type = this.pickType(r, d, this.tech(i, j));
       this.addBuilding(type, i, j, { level: type === 'plaza' ? 1 : this.levelFor(r, d), seed: hashInt(i, j, this.seed + 11), owned: false });
@@ -167,7 +186,7 @@ export class City {
     const id = this.nextId++;
     const b = { id, type, i, j, level, seed, owned, size: TOOLS[type].size, parts: null, anim: null };
     const c0 = this.center(b), h = (TILE * b.size) / 2 - 1;
-    b.rects = type === 'plaza' || type === 'alley' ? [] : [[c0.x - h, c0.z - h, c0.x + h, c0.z + h]];
+    b.rects = type === 'plaza' || type === 'alley' || type === 'park' ? [] : [[c0.x - h, c0.z - h, c0.x + h, c0.z + h]];
     b.height = 20;
     b.corp = CORPS[seed % CORPS.length];
     this.buildings.set(id, b);
@@ -244,7 +263,7 @@ export class City {
     return true;
   }
   canPlace(type, i, j) {
-    return this.footprint(type, i, j).every(([a, b]) => { this.ensureTile(a, b); return !this.isRoad(a, b) && !this.buildingAt(a, b); });
+    return this.footprint(type, i, j).every(([a, b]) => { this.ensureTile(a, b); return !this.isRoad(a, b) && !this.buildingAt(a, b) && !this.highways.onTile(a, b); });
   }
   place(type, i, j, { level = 1, seed = randSeed(), free = false, owned = true } = {}) {
     if (!this.canPlace(type, i, j)) return false;
@@ -273,7 +292,7 @@ export class City {
   grow(i, j, { free = false } = {}) {
     const b = this.buildingAt(i, j);
     if (!b) return false;
-    if (b.level >= MAX_LEVEL || b.type === 'alley') return 'max';
+    if (b.level >= MAX_LEVEL || b.type === 'alley' || b.type === 'park') return 'max';
     if (!free && !this.spend(this.growCost(b))) return 'money';
     b.level++;
     b.seed = (Math.imul(b.seed, 1664525) + 1013904223) >>> 0;
@@ -433,13 +452,15 @@ export class City {
           }
         }
       });
+      this.highways.addTileParts(P, i, j);
+      const underDeck = this.highways.onTile(i, j);
       if (straight) {
         const alongZ = n[1];
         for (const sg of [-1, 1]) {
           P.box('paint', alongZ ? 0.1 : TILE, 0.02, alongZ ? TILE : 0.1, x + (alongZ ? sg * 4.2 : 0), 0.035, z + (alongZ ? 0 : sg * 4.2), 0, false);
         }
         // power + data cables strung between the buildings across the street, with lanterns
-        if (hash3(i, j, s + 31) < 0.45) {
+        if (!underDeck && hash3(i, j, s + 31) < 0.45) {
           const nc = 1 + Math.floor(hash3(j, i, s + 32) * 3);
           for (let k = 0; k < nc; k++) {
             const h = 7 + hash3(i + k, j, s + 33) * 20;
@@ -572,8 +593,8 @@ export class City {
   }
 
   // ------------------------------------------------------------ collision
-  obstaclesNear(x, z) {
-    const out = [];
+  obstaclesNear(x, z, y = 0) {
+    const out = y < 3 ? this.highways.pylonRects(x, z) : [];
     const seen = new Set();
     const ci = Math.floor(x / TILE), cj = Math.floor(z / TILE);
     for (let a = -2; a <= 2; a++) for (let c = -2; c <= 2; c++) {

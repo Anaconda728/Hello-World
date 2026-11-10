@@ -21,6 +21,8 @@ import { Robots, Gangs } from './npcs.js';
 import { Drones } from './drones.js';
 import { Marker } from './markers.js';
 import { Conversation } from './conversation.js';
+import { Combat, WEAPONS } from './combat.js';
+import { Wanted, CRIME } from './wanted.js';
 
 const PREFS_KEY = 'neonsprawl.prefs.v1';
 const DEMO_SEED = 7331;
@@ -135,6 +137,7 @@ let mode = null;        // build | walk | drive
 let slot = null;        // { id, name } of the world being played
 let vision = 0, visionTarget = 0, pulse = 1, glitch = 0;
 let talkTarget = null;
+let hudTimer = 0;
 
 const ui = new UI({
   tool: (t) => { if (mode !== 'build') setMode('build'); build.setTool(t); },
@@ -174,9 +177,61 @@ const conv = new Conversation({
   onClose: () => { const dom = renderer.domElement; if (mode === 'walk' && !ctx.paused) dom.requestPointerLock?.(); },
 });
 
+// ---------------------------------------------------------------- combat + wanted
+const wanted = new Wanted(ui);
+let deathT = 0, ambushT = 150;
+const combat = new Combat({
+  scene, camera, city, audio, ui,
+  sources: [gangs, robots, traffic, drones],
+  // Unprovoked violence is a crime. Drones always count when destroyed; seen by patrols = full heat.
+  onCrime: (tg, { wasHostile, killed }) => {
+    const c = CRIME[tg.kind];
+    if (!c) return;
+    if (wasHostile && !(tg.kind === 'drone' && killed)) return;
+    const amount = killed ? c.kill : c.hit;
+    const pp = mode === 'drive' ? drive.pos : walk.pos;
+    const witnessed = wanted.stars > 0 || drones.nearestEnforcerDist(pp) < 150;
+    wanted.crime(amount, witnessed);
+  },
+  onDeath: () => {
+    deathT = 3.5;
+    ui.flatline(true);
+    if (document.pointerLockElement) document.exitPointerLock();
+    if (conv.open) conv.close();
+    audio.thud(1);
+  },
+});
+ctx.combat = combat;
+gangs.combat = combat;
+drones.combat = combat;
+gangs.onTaunt = (g, line) => { if (mode === 'walk') ui.toast(`${g.gang.name}: “${line}”`); };
+
+function respawn() {
+  // wake up at the nearest Chrome Clinic (or the district centre) with a medical bill
+  const p = mode === 'drive' ? drive.pos.clone() : walk.pos.clone();
+  let best = null, bd = Infinity;
+  for (const b of city.buildings.values()) {
+    if (b.type !== 'clinic') continue;
+    const c = city.center(b), d = Math.hypot(c.x - p.x, c.z - p.z);
+    if (d < bd) { bd = d; best = c; }
+  }
+  const s = findSpawn(best ? best.x : 6, best ? best.z : 6);
+  if (mode !== 'walk') setMode('walk');
+  walk.pos.set(s.x + Math.cos(s.heading) * 4.9, 0, s.z - Math.sin(s.heading) * 4.9);
+  walk.vel.set(0, 0, 0);
+  const bill = city.sandbox ? 0 : Math.floor(city.credits * 0.1);
+  city.credits -= bill;
+  wanted.clear();
+  combat.revive();
+  ui.flatline(false);
+  ui.alert('✚ REVIVED', `${best ? 'Chrome Clinic' : 'Trauma team'} · medical bill ¢${bill}`);
+  renderer.domElement.requestPointerLock?.();
+}
+
 // enforcer drones scan you as they pass overhead
 drones.onScan = () => {
   if (mode !== 'walk' || state !== 'game') return;
+  if (wanted.stars > 0) { wanted.evade = 0; ui.alert('◉ IDENTIFIED', 'Enforcer scan · pursuit continues'); return; }
   glitch = 0.45;
   audio.blip(1500);
   const job = marker.active?.kind === 'job';
@@ -293,6 +348,8 @@ function startGame(p, fresh) {
   drones.placed.clear();
   if (conv.open) conv.close();
   if (p.marker) marker.set(p.marker); else marker.clear();
+  wanted.clear(); combat.revive(); combat.weapon = 0; combat.select(-1);
+  drones.pursuers.length = 0; drones.wrecks.length = 0; deathT = 0; ui.flatline(false);
   build.target.set(p.x || 0, 0, p.z || 0);
   build.smooth.target.copy(build.target);
   build.yaw = build.smooth.yaw = p.yaw ?? Math.PI * 0.25;
@@ -360,7 +417,7 @@ function setMode(next) {
   } else if (next === 'walk') {
     if (prev === 'drive') {
       const h = drive.heading;
-      walk.enter({ x: drive.pos.x + Math.cos(h) * 2.6, z: drive.pos.z - Math.sin(h) * 2.6, yaw: h + Math.PI });
+      walk.enter({ x: drive.pos.x + Math.cos(h) * 2.6, z: drive.pos.z - Math.sin(h) * 2.6, y: drive.pos.y, yaw: h + Math.PI });
     } else {
       const s = findSpawn(build.target.x, build.target.z);
       walk.enter({ x: s.x + Math.cos(s.heading) * 4.9, z: s.z - Math.sin(s.heading) * 4.9, yaw: s.heading + Math.PI });
@@ -368,7 +425,7 @@ function setMode(next) {
   } else if (next === 'drive') {
     if (prev === 'walk') {
       const h = walk.yaw + Math.PI;
-      drive.enter({ x: walk.pos.x + Math.sin(h) * 4, z: walk.pos.z + Math.cos(h) * 4, heading: h });
+      drive.enter({ x: walk.pos.x + Math.sin(h) * 4, z: walk.pos.z + Math.cos(h) * 4, y: walk.pos.y, heading: h });
     } else {
       const s = findSpawn(build.target.x, build.target.z);
       drive.enter({ x: s.x, z: s.z, heading: s.heading });
@@ -397,8 +454,22 @@ window.addEventListener('keydown', (e) => {
   else if (e.code === 'KeyH') document.body.classList.toggle('hide-hud');
   else if (e.code === 'KeyP') saveGame(true);
   else if (e.code === 'KeyM' && marker.active) { marker.clear(); ui.toast('Marker cleared'); }
+  else if (deathT > 0) return;
+  else if (mode === 'walk' && /^Digit[1-5]$/.test(e.code)) combat.select(+e.code.slice(5) - 1);
+  else if (mode === 'walk' && e.code === 'KeyR') combat.reload();
+  else if (e.code === 'KeyE' && mode === 'walk' && talkTarget?.wipe) {
+    const cost = wanted.wipeCost();
+    if (!city.sandbox && city.credits < cost) ui.toast(`Wiping your record costs ¢${cost}`);
+    else {
+      if (!city.sandbox) city.credits -= cost;
+      wanted.clear();
+      ui.alert('✔ RECORD WIPED', `${talkTarget.wipe} · −¢${cost} · the drones lose interest`);
+      audio.blip(1200);
+    }
+  }
   else if (e.code === 'KeyE' && mode === 'walk' && talkTarget) {
     if (document.pointerLockElement) document.exitPointerLock();
+    combat.trigger = false;
     if (talkTarget.robot) conv.talkRobot(talkTarget.robot, robots);
     else conv.talkGang(talkTarget.gang);
     audio.blip(700);
@@ -408,8 +479,18 @@ window.addEventListener('keydown', (e) => {
 });
 // browsers release pointer lock on Esc before we see the key: treat that as "open menu"
 document.addEventListener('pointerlockchange', () => {
-  if (!document.pointerLockElement && mode === 'walk' && state === 'game' && !ctx.paused && walk.active && !conv.open && !document.body.classList.contains('talking')) setPaused(true);
+  if (!document.pointerLockElement) { combat.trigger = false; combat.aiming = false; }
+  if (!document.pointerLockElement && mode === 'walk' && state === 'game' && !ctx.paused && walk.active && !conv.open && deathT <= 0 && !document.body.classList.contains('talking')) setPaused(true);
 });
+// weapons: LMB fire, RMB aim, wheel cycles (walk mode, pointer locked)
+const armed = () => state === 'game' && mode === 'walk' && !ctx.paused && !conv.open && deathT <= 0 && document.pointerLockElement === renderer.domElement;
+window.addEventListener('mousedown', (e) => {
+  if (!armed()) return;
+  if (e.button === 0) { if (combat.weapon < 0) combat.select(1); combat.trigger = true; }
+  if (e.button === 2) combat.aiming = true;
+});
+window.addEventListener('mouseup', (e) => { if (e.button === 0) combat.trigger = false; if (e.button === 2) combat.aiming = false; });
+window.addEventListener('wheel', (e) => { if (armed()) combat.cycle(e.deltaY > 0 ? 1 : -1); }, { passive: true });
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
@@ -481,8 +562,13 @@ function tick() {
   } else {
     if (!ctx.paused) {
       if (mode === 'build') build.update(dt);
-      else if (mode === 'walk') { if (!conv.open) walk.update(dt); }
-      else drive.update(dt, t);
+      else if (mode === 'walk') { if (!conv.open && deathT <= 0) walk.update(dt); }
+      else if (deathT <= 0) drive.update(dt, t);
+    }
+    if (deathT > 0 && !ctx.paused) {
+      deathT -= dt;
+      camera.rotation.z += dt * 0.15; // slump
+      if (deathT <= 0) respawn();
     }
     city.stream(f.x, f.z, mode === 'drive' ? 9 : 6);
 
@@ -516,7 +602,22 @@ function tick() {
       const fx = -Math.sin(walk.yaw), fz = -Math.cos(walk.yaw);
       const r = robots.nearest(walk.pos, fx, fz);
       const g = gangs.nearest(walk.pos, fx, fz);
-      if (r && (!g || Math.hypot(r.pos.x - walk.pos.x, r.pos.z - walk.pos.z) < Math.hypot(g.m.x - walk.pos.x, g.m.z - walk.pos.z))) {
+      // wanted? Data Spires and Chrome Clinics can scrub your record
+      let wipe = null;
+      if (wanted.stars > 0) {
+        const ti = Math.floor(walk.pos.x / TILE), tj = Math.floor(walk.pos.z / TILE);
+        for (let a = -1; a <= 1 && !wipe; a++) for (let c = -1; c <= 1 && !wipe; c++) {
+          const b = city.buildingAt(ti + a, tj + c);
+          if (b && (b.type === 'dataspire' || b.type === 'clinic')) {
+            const cc = city.center(b);
+            if (Math.hypot(cc.x - walk.pos.x, cc.z - walk.pos.z) < 13) wipe = b.type === 'clinic' ? 'Chrome Clinic face-swap' : 'Data Spire record hack';
+          }
+        }
+      }
+      if (wipe) {
+        talkTarget = { wipe };
+        ui.setPrompt(`${wipe}: clear your wanted level (¢${wanted.wipeCost()})`);
+      } else if (r && (!g || Math.hypot(r.pos.x - walk.pos.x, r.pos.z - walk.pos.z) < Math.hypot(g.m.pos.x - walk.pos.x, g.m.pos.z - walk.pos.z))) {
         const id = robots.identity(r, {});
         talkTarget = { robot: r };
         ui.setPrompt(`Talk to ${id.designation} “${id.name}” (${id.role})`);
@@ -550,10 +651,36 @@ function tick() {
 
   city.update(dt, t, mode === 'build' && state === 'game');
   traffic.update(dt, t, f);
-  const npcPlayer = state === 'game' && mode === 'walk' ? walk.pos : null;
+  const inGame = state === 'game' && !ctx.paused;
+  const npcPlayer = inGame && mode === 'walk' && deathT <= 0 ? walk.pos : null;
+  const target = inGame && deathT <= 0 ? (mode === 'walk' ? walk.pos : mode === 'drive' ? drive.pos : null) : null;
+  const hidden = mode === 'walk' && city.buildingAt(Math.floor(walk.pos.x / TILE), Math.floor(walk.pos.z / TILE))?.type === 'alley';
+  const seen = target ? drones.anySees(target, hidden) : false;
+  drones.stars = wanted.stars;
+  if (inGame && mode !== 'build') wanted.update(dt, seen, hidden);
   robots.update(dt, t, f, npcPlayer);
-  gangs.update(dt, t, f, npcPlayer);
-  drones.update(dt, t, f, npcPlayer);
+  gangs.update(dt, t, f, npcPlayer, marker.active?.kind === 'job' ? marker.active.gang : null);
+  drones.update(dt, t, f, npcPlayer, seen && !!target, target);
+  combat.update(inGame ? dt : 0, t, target, { inCar: mode === 'drive', onFoot: mode === 'walk' && deathT <= 0, moving: Math.hypot(walk.vel.x, walk.vel.z) });
+  if (inGame && mode === 'drive' && deathT <= 0) combat.vehicleHits(drive.pos, drive.vel.length());
+  // random street ambushes while on foot
+  if (inGame && mode === 'walk' && wanted.stars === 0 && deathT <= 0 && !gangs.hostileNear(walk.pos)) {
+    ambushT -= dt;
+    if (ambushT <= 0) {
+      ambushT = 150 + Math.random() * 180;
+      const g = gangs.ambush(walk.pos);
+      if (g) { ui.alert('⚠ AMBUSH', `${g.name} are coming for you`); glitch = 0.4; }
+    }
+  }
+  if (state === 'game' && mode !== 'build') {
+    hudTimer -= dt;
+    if (hudTimer <= 0) {
+      hudTimer = 0.1;
+      ui.setVitals(combat.hp, combat.maxHp, combat.shield, combat.maxShield);
+      ui.setWeapon(WEAPONS, combat.weapon, combat.ammo, combat.reloadT > 0, combat.nadeT);
+      ui.setWanted(wanted.stars, wanted.evade / wanted.evadeNeeded(), seen);
+    }
+  } else ui.setWanted(0, 0, false);
   world.update(dt, t, camera, f);
   animateMaterials(t);
 
@@ -576,4 +703,4 @@ window.addEventListener('beforeunload', () => saveGame(false));
 requestAnimationFrame(frame);
 
 // handy for debugging from the console
-window.neon = { city, build, walk, drive, traffic, robots, gangs, drones, marker, conv, setMode, scene, camera, renderer, newWorld, loadSlot, get state() { return state; } };
+window.neon = { city, build, walk, drive, traffic, robots, gangs, drones, marker, conv, combat, wanted, setMode, scene, camera, renderer, newWorld, loadSlot, get state() { return state; } };

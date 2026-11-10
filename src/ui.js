@@ -3,15 +3,16 @@ import { TOOLS, TOOL_ORDER, TILE, DRONE_TYPES, DRONE_ORDER, buildingYield } from
 import { listSlots } from './saves.js';
 
 const $ = (id) => document.getElementById(id);
+const hexStr = (hex) => hex.toString(16).padStart(6, '0');
 const fmt = (n) => Math.floor(n).toLocaleString('en-US');
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const HELP = {
   build: `<b>LMB</b> place / drag · <b>RMB</b> orbit<br><b>WASD</b> pan (<b>Shift</b> fast) · <b>Q/E</b> rotate · <b>wheel</b> zoom<br><b>1-9 0 -</b> build · <b>G</b> grow · <b>X</b> demolish<br><b>F</b> walk · <b>V</b> drive · <b>Esc</b> menu · <b>H</b> hide HUD`,
-  walk: `<b>WASD</b> move · <b>Shift</b> run · <b>Space</b> jump<br><b>Mouse</b> look · <b>E</b> talk to robots &amp; gangs<br><b>M</b> clear marker · <b>V</b> summon car<br><b>B</b> builder · <b>Esc</b> menu · <b>H</b> hide HUD`,
+  walk: `<b>WASD</b> move · <b>Shift</b> run · <b>Space</b> jump<br><b>LMB</b> fire · <b>RMB</b> aim · <b>1-5</b>/<b>wheel</b> weapons · <b>R</b> reload<br><b>E</b> talk · <b>M</b> clear marker · <b>V</b> summon car<br><b>B</b> builder · <b>Esc</b> menu · <b>H</b> hide HUD`,
   drive: `<b>W/S</b> throttle / brake · <b>A/D</b> steer<br><b>Space</b> drift · <b>Shift</b> boost · <b>C</b> camera<br><b>X</b> optic overlay · <b>F</b> get out · <b>B</b> builder · <b>Esc</b> menu`,
 };
-const TYPE_COLORS = { alley: [120, 16, 30], habitat: [255, 176, 46], corp: [46, 246, 255], arcology: [255, 43, 214], plaza: [57, 255, 156], billboard: [255, 94, 168], powercore: [255, 106, 46], dataspire: [57, 255, 156], dronehub: [158, 243, 255], clinic: [255, 94, 168], uplink: [138, 92, 255] };
+const TYPE_COLORS = { alley: [120, 16, 30], park: [20, 90, 60], habitat: [255, 176, 46], corp: [46, 246, 255], arcology: [255, 43, 214], plaza: [57, 255, 156], billboard: [255, 94, 168], powercore: [255, 106, 46], dataspire: [57, 255, 156], dronehub: [158, 243, 255], clinic: [255, 94, 168], uplink: [138, 92, 255] };
 const MM = 72; // tiles shown across the minimap
 
 function timeAgo(ts) {
@@ -231,6 +232,53 @@ export class UI {
     this.dialogChoices = [];
   }
   pickChoice(k) { this.dialogChoices[k]?.fn(); }
+
+  // ---------------------------------------------------------------- combat hud
+  setVitals(hp, maxHp, sh, maxSh) {
+    $('v-hp').style.width = (100 * hp / maxHp).toFixed(1) + '%';
+    $('v-shield').style.width = (100 * sh / maxSh).toFixed(1) + '%';
+    $('v-txt').textContent = `HP ${Math.ceil(hp)} · SHIELD ${Math.ceil(sh)}`;
+    $('vitals').classList.toggle('low', hp < 30);
+  }
+  setWeapon(list, idx, ammo, reloading, nadeT) {
+    const el = $('weapon');
+    const w = list[idx];
+    const slots = list.map((x, k) => `<i class="${k === idx ? 'on' : ''}">${x.key}</i>`).join('');
+    let ammoTxt = '';
+    if (!w) ammoTxt = '<small>holstered · press 1-5</small>';
+    else if (!w.clip) ammoTxt = '∞';
+    else if (w.kind === 'grenade') ammoTxt = `${ammo[idx]}<small> / ${w.clip}${nadeT > 0 ? ` · fab ${Math.ceil(nadeT)}s` : ''}</small>`;
+    else ammoTxt = `${ammo[idx]}<small> / ${w.clip}</small>`;
+    const key = `${idx}|${ammoTxt}|${reloading}`;
+    if (key === this.wKey) return;
+    this.wKey = key;
+    el.innerHTML = `<div class="wn" style="color:#${w ? hexStr(w.color) : '7d86a8'}">${w ? esc(w.name) : 'UNARMED'}</div>
+      <div class="wa">${ammoTxt}</div>${reloading ? '<div class="wr">RELOADING…</div>' : ''}<div class="ws">${slots}</div>`;
+  }
+  setWanted(stars, evadeFrac, seen) {
+    const el = $('wanted');
+    el.classList.toggle('show', stars > 0);
+    el.classList.toggle('seen', seen);
+    if (!stars) return;
+    el.querySelector('.stars').innerHTML = '<b>' + '★'.repeat(stars) + '</b>' + '★'.repeat(5 - stars);
+    el.querySelector('small').textContent = seen ? 'WANTED · PURSUIT ACTIVE' : `EVADING · ${Math.round(evadeFrac * 100)}%`;
+  }
+  hitmarker(kill) {
+    const el = $('hitmarker');
+    el.className = '';
+    void el.offsetWidth;
+    el.className = kill ? 'kill' : 'hit';
+  }
+  damage(k, shield) {
+    const el = $('dmgfx');
+    el.classList.toggle('shield', shield);
+    el.style.transition = 'none';
+    el.style.opacity = String(0.35 + k * 0.65);
+    void el.offsetWidth;
+    el.style.transition = 'opacity 0.5s';
+    el.style.opacity = '0';
+  }
+  flatline(on) { $('flatline').classList.toggle('show', on); }
   setStats(credits, s, sandbox) {
     $('st-credits').textContent = sandbox ? '∞' : '¢' + fmt(credits);
     $('st-pop').textContent = fmt(s.pop);
@@ -295,7 +343,7 @@ export class UI {
       const i = ci + a, j = cj + b;
       let r = 7, g = 4, bl = 15;
       const loaded = city.chunkAt(i, j);
-      if (city.isRoad(i, j)) { r = 60; g = 63; bl = 92; }
+      if (city.isRoad(i, j)) { if (city.highways.onTile(i, j)) { r = 150; g = 70; bl = 190; } else { r = 60; g = 63; bl = 92; } }
       else if (loaded) {
         const x = city.buildingAt(i, j);
         if (x) {

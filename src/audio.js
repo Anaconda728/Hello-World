@@ -69,6 +69,27 @@ export class Audio {
     const g = this.ctx.createGain(); g.gain.setValueAtTime(0.12, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
     o.connect(g).connect(this.master); o.start(t); o.stop(t + 0.2);
   }
+  // gunshot: short filtered noise burst with a pitch drop
+  shot(v = 0.5) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime, ctx = this.ctx;
+    const len = 0.18, buf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * len), ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 3);
+    const src = ctx.createBufferSource(); src.buffer = buf;
+    const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.setValueAtTime(5000, t); f.frequency.exponentialRampToValueAtTime(400, t + len);
+    const g = ctx.createGain(); g.gain.value = 0.35 * v;
+    src.connect(f).connect(g).connect(this.master); src.start(t);
+  }
+  // energy weapon: falling square-wave zap
+  zap(pos, v = 0.4) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    const o = this.ctx.createOscillator(); o.type = 'square';
+    o.frequency.setValueAtTime(1400, t); o.frequency.exponentialRampToValueAtTime(180, t + 0.12);
+    const g = this.ctx.createGain(); g.gain.setValueAtTime(0.06 * v, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
+    o.connect(g).connect(this.master); o.start(t); o.stop(t + 0.15);
+  }
   thud(v) {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
