@@ -5,11 +5,13 @@
   "description": "Dark-neon cyberpunk city builder: build an endless megacity, then walk or drive its streets.",
   "scripts": {
     "dev": "python3 -m http.server 8000",
-    "build": "node tools/build.mjs"
+    "build": "node tools/build.mjs",
+    "build:win": "node tools/build-win.mjs"
   },
   "devDependencies": {
     "@fontsource/orbitron": "5.2.5",
     "@fontsource/share-tech-mono": "5.2.5",
-    "esbuild": "0.25.0"
+    "esbuild": "0.25.0",
+    "resedit": "^2.0.3"
   }
 }

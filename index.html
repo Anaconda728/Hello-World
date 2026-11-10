@@ -39,6 +39,7 @@
         <button class="big" id="t-load">⟲ Load World</button>
         <button class="big" id="t-import">⤒ Import Save File</button>
         <button class="big" id="t-settings">⚙ Settings</button>
+        <button class="big" id="t-quit" style="display:none">⏻ Quit to desktop</button>
         <div class="foot">Cities autosave to this browser. Export a file to back one up or move it to another machine.</div>
       </div>
 
@@ -132,6 +133,7 @@
       <button class="big" id="m-export">⤓ Export save file</button>
       <button class="big" id="m-settings">⚙ Settings</button>
       <button class="big" id="m-quit">⏏ Save &amp; quit to title</button>
+      <button class="big" id="m-exit" style="display:none">⏻ Save &amp; quit to desktop</button>
     </div>
   </div>
 
@@ -152,6 +154,16 @@
       <label class="chk"><input type="checkbox" id="s-fps" /> Show FPS counter</label>
       <p class="dim">If the game stutters, lower the graphics quality. Low draws a smaller area of the city and turns off bloom.</p>
       <button class="big" id="s-close">✔ Done</button>
+    </div>
+  </div>
+
+  <!-- ===================== in-game prompt / confirm ===================== -->
+  <div id="ask">
+    <div class="box">
+      <h3 id="ask-title"></h3>
+      <p id="ask-text" class="dim"></p>
+      <input id="ask-input" maxlength="32" />
+      <div class="row"><button id="ask-cancel">Cancel</button><button class="primary" id="ask-ok">OK</button></div>
     </div>
   </div>
 

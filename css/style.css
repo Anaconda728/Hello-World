@@ -291,3 +291,13 @@ body.mode-build.drone-tool #info.show { bottom: 168px; }
 #settings input[type=range] { accent-color: var(--cyan); }
 #fps { position: fixed; left: 50%; bottom: 4px; transform: translateX(-50%); z-index: 41; font-size: 11px; color: #39ff9c; display: none; pointer-events: none; text-shadow: 0 0 4px #000; }
 #fps.show { display: block; }
+
+#ask { position: fixed; inset: 0; z-index: 55; display: none; align-items: center; justify-content: center; background: rgba(5,3,10,0.7); backdrop-filter: blur(3px); }
+#ask.show { display: flex; }
+#ask .box { width: min(400px, 92vw); display: flex; flex-direction: column; gap: 12px; padding: 22px; background: var(--bg); border: 1px solid var(--line); }
+#ask h3 { margin: 0; font-family: Orbitron, sans-serif; color: var(--magenta); letter-spacing: 0.15em; font-size: 15px; text-transform: uppercase; }
+#ask p { margin: 0; }
+#ask input { font-family: inherit; font-size: 16px; padding: 9px 10px; color: var(--text); background: rgba(0,0,0,0.5); border: 1px solid var(--line); outline: none; }
+#ask input:focus { border-color: var(--cyan); }
+#ask .row { display: flex; gap: 8px; }
+#ask .row button { flex: 1; }

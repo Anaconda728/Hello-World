@@ -2,12 +2,16 @@
 
 ## 1.0.0 (first stable release)
 
+- **Windows desktop app**: `Neon Sprawl.exe` (Electron 44) with its own window and icon, F11
+  fullscreen, a native Save As dialog for exports, a crash-restart prompt and Quit to desktop.
+  Saves go to `%APPDATA%\Neon Sprawl`.
 - **Portable download**: unzip and double-click `Play Neon Sprawl.html`. Runs offline from disk in any
   modern browser, with fonts bundled.
 - **Title screen**: Continue, New World (name, seed, sandbox), Load World (slots with export/delete),
   Import save file, Settings.
 - **Settings**: graphics quality presets (Low / Medium / High), mouse sensitivity, FPS counter. The game
   suggests a lower preset if it detects sustained low frame rates.
+- In-game naming/confirm dialogs replace browser `prompt()`/`confirm()`.
 - **Stability**: a crash screen instead of a frozen black screen, recovery from one-off frame errors,
   and a clear message when WebGL is unavailable or the GPU driver resets.
 - **Endless procedural city**, streamed in chunks around you; edited chunks are saved.

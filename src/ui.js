@@ -83,6 +83,31 @@ export class UI {
     this.scanKey = null;
   }
 
+  // In-game replacement for prompt()/confirm() (desktop builds don't support prompt).
+  // Resolves to the entered text (input mode), true (confirm mode), or null when cancelled.
+  ask({ title, text = '', value = null, ok = 'OK' }) {
+    return new Promise((resolve) => {
+      const box = $('ask'), input = $('ask-input');
+      $('ask-title').textContent = title;
+      $('ask-text').textContent = text;
+      $('ask-text').style.display = text ? '' : 'none';
+      $('ask-ok').textContent = ok;
+      const wantsText = value !== null;
+      input.style.display = wantsText ? '' : 'none';
+      input.value = wantsText ? value : '';
+      box.classList.add('show');
+      if (wantsText) setTimeout(() => { input.focus(); input.select(); }, 30);
+      const done = (v) => {
+        box.classList.remove('show');
+        $('ask-ok').onclick = $('ask-cancel').onclick = input.onkeydown = null;
+        resolve(v);
+      };
+      $('ask-ok').onclick = () => done(wantsText ? input.value.trim() || null : true);
+      $('ask-cancel').onclick = () => done(null);
+      input.onkeydown = (e) => { if (e.key === 'Enter') $('ask-ok').click(); if (e.key === 'Escape') done(null); e.stopPropagation(); };
+    });
+  }
+
   // ---------------------------------------------------------------- title / menus
   showTitle(on) {
     document.body.classList.toggle('title', on);
@@ -113,7 +138,9 @@ export class UI {
         <button class="go">Load</button><button class="ex" title="Export to file">⤓</button><button class="del" title="Delete">✖</button>`;
       row.querySelector('.go').onclick = () => this.h.loadSlot(s.id);
       row.querySelector('.ex').onclick = () => this.h.exportSlot(s.id);
-      row.querySelector('.del').onclick = () => { if (confirm(`Delete "${s.name}" permanently?`)) { this.h.deleteSlot(s.id); this.renderSlots(); } };
+      row.querySelector('.del').onclick = async () => {
+        if (await this.ask({ title: 'Delete city?', text: `"${s.name}" will be deleted permanently.`, ok: 'Delete' })) { this.h.deleteSlot(s.id); this.renderSlots(); }
+      };
       el.appendChild(row);
     }
   }

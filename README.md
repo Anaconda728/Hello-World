@@ -13,6 +13,28 @@ That's it: it runs in your browser straight from the folder, with no install, la
 connection. Best in an up-to-date Chrome, Edge or Firefox. `README.txt` in the zip covers controls and
 troubleshooting. If it stutters on a laptop, set **Settings → Graphics quality** to Low or Medium.
 
+## Windows desktop app (v1.0.0)
+
+A standalone Windows build wraps the same game in Electron: its own window, no browser needed.
+
+1. Extract `NeonSprawl-v1.0.0-win64.zip` (right-click → Extract All).
+2. Run **`Neon Sprawl.exe`**. The build isn't code-signed, so on first launch SmartScreen may say
+   "Windows protected your PC": click **More info → Run anyway**.
+
+It's portable (no installer, no admin rights). Saves live in `%APPDATA%\Neon Sprawl`. F11 or Alt+Enter
+toggles fullscreen. On laptops with two GPUs it asks Windows for the faster one.
+
+Build it yourself from any OS (needs Node 18+, `curl` and `zip`; downloads and checksum-verifies the
+Electron runtime into `.cache/`):
+
+```sh
+npm install
+npm run build:win    # -> dist/NeonSprawl-v<version>-win64/ and .zip
+```
+
+The zip is about 150 MB, which is over GitHub's 100 MB file limit, so it isn't committed to the repo.
+Attach it to a GitHub Release instead.
+
 ## Develop
 
 The source is plain ES modules with no build step needed for development (Three.js is vendored in `vendor/`):
@@ -111,6 +133,8 @@ src/npcs.js                 street robots and alley gangs
 src/dialogue.js, conversation.js   procedural robot/gang dialogue and the talk flows
 src/markers.js              map marker / courier drop point
 tools/build.mjs             release build (esbuild bundle, offline fonts, zip)
+tools/build-win.mjs         Windows desktop build (Electron runtime + branded exe via resedit)
+desktop/                    Electron shell (main.js), app icon
 release/README.txt          player-facing readme shipped in the zip
 releases/                   built release zips
 src/saves.js                localStorage save slots, file export/import

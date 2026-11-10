@@ -153,8 +153,8 @@ const ui = new UI({
     loadSlot(id);
   }).catch((e) => ui.toast('Import failed: ' + e.message)),
   save: () => { saveGame(true); },
-  saveAs: () => {
-    const name = prompt('Name for the new save slot:', (slot?.name || 'Sprawl') + ' (copy)');
+  saveAs: async () => {
+    const name = await ui.ask({ title: 'Save as new slot', text: 'Name for the new save:', value: (slot?.name || 'Sprawl') + ' (copy)', ok: 'Save' });
     if (!name) return;
     slot = { id: Saves.newSlotId(), name: name.slice(0, 32) };
     saveGame(true);
@@ -220,6 +220,13 @@ $s('s-fps').onchange = (e) => { prefs.showFps = e.target.checked; savePrefs(pref
 $s('s-close').onclick = () => $s('settings').classList.remove('show');
 $s('t-settings').onclick = openSettings;
 $s('m-settings').onclick = openSettings;
+// desktop (Electron) build: offer a real quit
+if (/Electron/i.test(navigator.userAgent)) {
+  $s('t-quit').style.display = '';
+  $s('m-exit').style.display = '';
+  $s('t-quit').onclick = () => window.close();
+  $s('m-exit').onclick = () => { saveGame(false); window.close(); };
+}
 
 function applyToggle(id, v) {
   if (id === 'rain') { world.rain.visible = v; audio.setRain(v); }
