@@ -275,3 +275,19 @@ body.mode-build.drone-tool #info.show { bottom: 168px; }
 #dronebar button.active { color: #05030a; background: #ffd23e; box-shadow: 0 0 14px #ffd23e; }
 #dronebar button.active small { color: #05030a; }
 @media (max-width: 1150px) { #topbar .brand { display: none; } .stat b { font-size: 14px; } }
+
+/* ---------------------------------------------------------- settings / fps / fatal */
+#settings, #fatal { position: fixed; inset: 0; z-index: 45; display: none; align-items: center; justify-content: center; background: rgba(5,3,10,0.7); backdrop-filter: blur(3px); }
+#settings.show, #fatal.show { display: flex; }
+#fatal { z-index: 60; }
+#settings .box, #fatal .box { width: min(420px, 92vw); display: flex; flex-direction: column; gap: 12px; padding: 22px; background: var(--bg); border: 1px solid var(--line); }
+#fatal .box { border-color: #ff2848; }
+#settings h3, #fatal h3 { margin: 0; font-family: Orbitron, sans-serif; color: var(--magenta); letter-spacing: 0.15em; font-size: 15px; text-transform: uppercase; }
+#fatal h3 { color: #ff4060; }
+#fatal-msg { font-size: 14px; line-height: 1.5; margin: 0; white-space: pre-wrap; }
+#settings label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.15em; }
+#settings label.chk { flex-direction: row; align-items: center; text-transform: none; letter-spacing: 0; font-size: 14px; color: var(--text); }
+#settings select { font-family: inherit; font-size: 14px; padding: 8px; color: var(--text); background: rgba(0,0,0,0.6); border: 1px solid var(--line); }
+#settings input[type=range] { accent-color: var(--cyan); }
+#fps { position: fixed; left: 50%; bottom: 4px; transform: translateX(-50%); z-index: 41; font-size: 11px; color: #39ff9c; display: none; pointer-events: none; text-shadow: 0 0 4px #000; }
+#fps.show { display: block; }

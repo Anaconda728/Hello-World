@@ -3,7 +3,7 @@
 // touched are kept (and saved) in full.
 import * as THREE from 'three';
 import {
-  TILE, CHUNK, CHUNK_W, LOAD_DIST, UNLOAD_DIST, FREE_ZONE, SUPERBLOCK, DIRS, TOOLS, MAX_LEVEL,
+  TILE, CHUNK, CHUNK_W, SETTINGS, FREE_ZONE, SUPERBLOCK, DIRS, TOOLS, MAX_LEVEL,
   NO_ROAD_NEEDED, DRONE_TYPES, tileCenter, chunkCoord, chunkKey, buildingYield,
 } from './config.js';
 import { GENERATORS } from './buildings.js';
@@ -312,12 +312,12 @@ export class City {
   // ------------------------------------------------------------ streaming
   stream(fx, fz, budgetMs = 6) {
     const ccx = Math.floor(fx / CHUNK_W), ccz = Math.floor(fz / CHUNK_W);
-    const R = Math.ceil(LOAD_DIST / CHUNK_W);
+    const R = Math.ceil(SETTINGS.loadDist / CHUNK_W);
     const want = [];
     for (let dz = -R; dz <= R; dz++) for (let dx = -R; dx <= R; dx++) {
       const cx = ccx + dx, cz = ccz + dz;
       const d = Math.hypot((cx + 0.5) * CHUNK_W - fx, (cz + 0.5) * CHUNK_W - fz);
-      if (d < LOAD_DIST) want.push({ cx, cz, d });
+      if (d < SETTINGS.loadDist) want.push({ cx, cz, d });
     }
     want.sort((a, b) => a.d - b.d);
     const t0 = performance.now();
@@ -332,7 +332,7 @@ export class City {
     // edits in chunks outside the load ring still need their state, just no meshes
     for (const c of this.chunks.values()) {
       const d = Math.hypot(c.cx0 - fx, c.cz0 - fz);
-      if (d > UNLOAD_DIST) this.unloadChunk(c);
+      if (d > SETTINGS.unloadDist) this.unloadChunk(c);
     }
     if (changed) { this.refreshWarnings(); this.emit('chunks'); }
     return { ready, total: want.length };

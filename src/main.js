@@ -6,7 +6,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
-import { TILE, DIRS, FREE_ZONE, tileCenter, worldToTile } from './config.js';
+import { TILE, DIRS, FREE_ZONE, CHUNK_W, VERSION, QUALITY, SETTINGS, tileCenter, worldToTile } from './config.js';
 import { initMaterials, animateMaterials } from './materials.js';
 import { World } from './world.js';
 import { City } from './city.js';
@@ -31,10 +31,29 @@ function savePrefs(p) {
   try { localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch (e) { /* ignore */ }
 }
 
+// ---------------------------------------------------------------- crash screen
+let fatalShown = false;
+function fatal(msg) {
+  if (fatalShown) return;
+  fatalShown = true;
+  document.getElementById('fatal-msg').textContent = msg;
+  document.getElementById('fatal').classList.add('show');
+  document.body.classList.remove('loading');
+}
+window.addEventListener('unhandledrejection', (e) => console.error('Unhandled promise rejection', e.reason));
+document.getElementById('version').textContent = VERSION;
+
 // ---------------------------------------------------------------- renderer
 const canvas = document.getElementById('c');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+} catch (e) {
+  fatal('This browser could not start WebGL, which Neon Sprawl needs for 3D graphics.\n\nTry an up-to-date Chrome, Edge or Firefox, and make sure hardware acceleration is turned on in the browser settings.');
+  throw e;
+}
+renderer.domElement.addEventListener('webglcontextlost', (e) => { e.preventDefault(); fatal('The graphics driver reset (WebGL context lost). Reboot to continue. If this keeps happening, choose Low graphics in Settings.'); });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
@@ -107,7 +126,8 @@ const robots = new Robots(scene, city);
 const gangs = new Gangs(scene, city);
 const drones = new Drones(scene, city);
 const marker = new Marker(scene);
-const prefs = Object.assign({ rain: true, sound: false, fx: true, growth: true }, loadPrefs());
+const prefs = Object.assign({ rain: true, sound: false, fx: true, growth: true, quality: 'medium', showFps: false, sens: 1 }, loadPrefs());
+if (!QUALITY[prefs.quality]) prefs.quality = 'medium';
 
 const ctx = { renderer, scene, camera, world, city, audio, ui: null, paused: false };
 let state = 'title';    // title | loading | game
@@ -169,15 +189,48 @@ drones.onScan = () => {
   }
 };
 
+// ---------------------------------------------------------------- settings
+function applyQuality() {
+  const q = QUALITY[prefs.quality];
+  const pr = Math.min(window.devicePixelRatio || 1, q.maxDpr) * q.pixelRatio;
+  renderer.setPixelRatio(pr);
+  composer.setPixelRatio(pr);
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  composer.setSize(window.innerWidth, window.innerHeight);
+  bloom.enabled = q.bloom && prefs.fx;
+  SETTINGS.quality = prefs.quality;
+  SETTINGS.loadDist = CHUNK_W * q.loadDist;
+  SETTINGS.unloadDist = CHUNK_W * (q.loadDist + 1.1);
+  SETTINGS.mouseSens = prefs.sens;
+  const rainVerts = world.rain.geometry.attributes.position.count;
+  world.rain.geometry.setDrawRange(0, Math.floor((rainVerts * q.rain) / 2) * 2);
+  document.getElementById('fps').classList.toggle('show', !!prefs.showFps);
+}
+const $s = (id) => document.getElementById(id);
+function openSettings() {
+  $s('s-quality').value = prefs.quality;
+  $s('s-sens').value = prefs.sens;
+  $s('s-sens-v').textContent = '×' + Number(prefs.sens).toFixed(1);
+  $s('s-fps').checked = !!prefs.showFps;
+  $s('settings').classList.add('show');
+}
+$s('s-quality').onchange = (e) => { prefs.quality = e.target.value; savePrefs(prefs); applyQuality(); };
+$s('s-sens').oninput = (e) => { prefs.sens = parseFloat(e.target.value); $s('s-sens-v').textContent = '×' + prefs.sens.toFixed(1); savePrefs(prefs); applyQuality(); };
+$s('s-fps').onchange = (e) => { prefs.showFps = e.target.checked; savePrefs(prefs); applyQuality(); };
+$s('s-close').onclick = () => $s('settings').classList.remove('show');
+$s('t-settings').onclick = openSettings;
+$s('m-settings').onclick = openSettings;
+
 function applyToggle(id, v) {
   if (id === 'rain') { world.rain.visible = v; audio.setRain(v); }
   if (id === 'sound') audio.setEnabled(v);
-  if (id === 'fx') { bloom.enabled = v; }
+  if (id === 'fx') { prefs.fx = v; bloom.enabled = v && QUALITY[prefs.quality].bloom; }
   if (id === 'sandbox') { city.sandbox = v; city.changed = true; }
   if (id !== 'sandbox') { prefs[id] = v; savePrefs(prefs); }
   ui.setToggle(id, v);
 }
 for (const k of ['rain', 'sound', 'fx', 'growth']) applyToggle(k, prefs[k]);
+applyQuality();
 
 // ---------------------------------------------------------------- saving
 function slotMeta(name, seed, stats = {}) {
@@ -328,6 +381,7 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     return;
   }
+  if (e.code === 'Escape' && $s('settings').classList.contains('show')) { $s('settings').classList.remove('show'); e.preventDefault(); return; }
   if (e.code === 'Escape') { setPaused(!ctx.paused); e.preventDefault(); return; }
   if (ctx.paused) return;
   if (e.code === 'KeyB') setMode('build');
@@ -377,8 +431,30 @@ const mmLast = new THREE.Vector2(1e9, 1e9);
 const clock = new THREE.Clock();
 let t = 0, booted = false;
 
+// The loop keeps running even if one frame throws; repeated failures show the crash screen.
+let frameErrors = 0, fpsFrames = 0, fpsTime = 0, slowSeconds = 0, slowHinted = false;
 function frame() {
-  const dt = Math.min(clock.getDelta(), 0.05);
+  requestAnimationFrame(frame);
+  if (fatalShown) return;
+  try {
+    tick();
+    frameErrors = 0;
+  } catch (e) {
+    console.error(e);
+    if (++frameErrors > 5) fatal('Something went wrong inside the game:\n' + (e && e.message ? e.message : e));
+  }
+}
+function tick() {
+  const raw = clock.getDelta();
+  const dt = Math.min(raw, 0.05);
+  fpsFrames++; fpsTime += raw;
+  if (fpsTime >= 0.5) {
+    const fps = fpsFrames / fpsTime;
+    if (prefs.showFps) document.getElementById('fps').textContent = `${Math.round(fps)} FPS · ${QUALITY[prefs.quality].label}`;
+    if (state === 'game' && !ctx.paused && prefs.quality !== 'low' && fps < 22) slowSeconds += fpsTime; else slowSeconds = 0;
+    if (slowSeconds > 8 && !slowHinted) { slowHinted = true; ui.toast('Running slowly. Try a lower graphics quality in ⚙ Settings (Esc menu).'); }
+    fpsFrames = 0; fpsTime = 0;
+  }
   t += dt;
   const f = focusPoint();
 
@@ -487,7 +563,6 @@ function frame() {
   if (vision > 0.5 && pulse >= 1.2) pulse = 0;
 
   composer.render();
-  requestAnimationFrame(frame);
 }
 
 window.addEventListener('beforeunload', () => saveGame(false));

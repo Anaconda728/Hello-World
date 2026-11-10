@@ -2,7 +2,7 @@
 // and an optic implant that scans whatever you look at.
 import * as THREE from 'three';
 import { resolveCircle } from './collide.js';
-import { TILE } from '../config.js';
+import { TILE, SETTINGS } from '../config.js';
 
 const EYE = 1.7;
 const DASH_TIME = 0.22, DASH_SPEED = 24, DASH_CD = 1.4;
@@ -26,8 +26,9 @@ export class WalkMode {
     });
     window.addEventListener('mousemove', (e) => {
       if (!this.active || document.pointerLockElement !== dom) return;
-      this.yaw -= e.movementX * 0.0022;
-      this.pitch = THREE.MathUtils.clamp(this.pitch - e.movementY * 0.0022, -1.5, 1.5);
+      const k = 0.0022 * SETTINGS.mouseSens;
+      this.yaw -= e.movementX * k;
+      this.pitch = THREE.MathUtils.clamp(this.pitch - e.movementY * k, -1.5, 1.5);
     });
     window.addEventListener('keydown', (e) => {
       if (!this.active || ctx.paused) return;

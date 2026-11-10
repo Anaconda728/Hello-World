@@ -4,16 +4,32 @@ A dark-neon cyberpunk city builder that runs in the browser. Raise towers, fusio
 above, then drop to street level and **walk** or **drive** through an endless rain-soaked megacity. The sprawl
 keeps generating dense city in every direction as you move.
 
-## Run it
+## Download and play (v1.0.0)
 
-It's plain ES modules with no build step. Three.js is vendored in `vendor/`, so it works offline.
+1. Download [`releases/NeonSprawl-v1.0.0.zip`](releases/NeonSprawl-v1.0.0.zip) (about 240 KB).
+2. Unzip it anywhere and double-click **`Play Neon Sprawl.html`**.
+
+That's it: it runs in your browser straight from the folder, with no install, launcher or internet
+connection. Best in an up-to-date Chrome, Edge or Firefox. `README.txt` in the zip covers controls and
+troubleshooting. If it stutters on a laptop, set **Settings → Graphics quality** to Low or Medium.
+
+## Develop
+
+The source is plain ES modules with no build step needed for development (Three.js is vendored in `vendor/`):
 
 ```sh
-python3 -m http.server 8000
-# then open http://localhost:8000
+python3 -m http.server 8000   # or: npm run dev
+# open http://localhost:8000
 ```
 
-(Opening `index.html` straight from disk won't work, because browsers block ES modules over `file://`.)
+To build the portable release (bundles everything into one script so it runs from `file://`):
+
+```sh
+npm install
+npm run build        # -> dist/NeonSprawl-v<version>/ and dist/NeonSprawl-v<version>.zip
+```
+
+Bump `version` in `package.json` and `VERSION` in `src/config.js` together; the build checks they match.
 
 ## Landing page and saves
 
@@ -94,6 +110,9 @@ src/humanoids.js            instanced articulated biped rig (robots, gang member
 src/npcs.js                 street robots and alley gangs
 src/dialogue.js, conversation.js   procedural robot/gang dialogue and the talk flows
 src/markers.js              map marker / courier drop point
+tools/build.mjs             release build (esbuild bundle, offline fonts, zip)
+release/README.txt          player-facing readme shipped in the zip
+releases/                   built release zips
 src/saves.js                localStorage save slots, file export/import
 src/modes/                  build (orbit camera + tools), walk (augmented first person), drive (hover-car)
 ```

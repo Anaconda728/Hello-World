@@ -3,8 +3,16 @@
 export const TILE = 12;              // metres per tile
 export const CHUNK = 16;             // tiles per chunk side
 export const CHUNK_W = CHUNK * TILE; // metres per chunk side
-export const LOAD_DIST = CHUNK_W * 2.35; // chunks whose centre is within this get built
-export const UNLOAD_DIST = CHUNK_W * 3.4;
+export const VERSION = '1.0.0';
+
+// Graphics presets: laptops with integrated GPUs should use low/medium.
+export const QUALITY = {
+  low:    { label: 'Low',    pixelRatio: 0.75, maxDpr: 1,    bloom: false, loadDist: 1.6,  rain: 0.5 },
+  medium: { label: 'Medium', pixelRatio: 1,    maxDpr: 1,    bloom: true,  loadDist: 2.0,  rain: 1 },
+  high:   { label: 'High',   pixelRatio: 1,    maxDpr: 1.75, bloom: true,  loadDist: 2.35, rain: 1 },
+};
+// Live, mutable settings (filled from prefs by main.js).
+export const SETTINGS = { quality: 'medium', loadDist: CHUNK_W * 2.0, unloadDist: CHUNK_W * 3.1, mouseSens: 1 };
 export const FREE_ZONE = 8;          // tiles around the origin left empty for the player in new worlds
 export const SUPERBLOCK = 12;        // main avenues every N tiles
 
