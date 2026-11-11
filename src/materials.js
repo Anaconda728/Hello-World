@@ -456,7 +456,7 @@ export function initMaterials(renderer) {
   MAT.flicker = neonBasic(0xff2bd6, 3);
   MAT.trash = new THREE.MeshStandardMaterial({ color: 0x0b0b0d, roughness: 0.35, metalness: 0.1 });
   MAT.dumpster = new THREE.MeshStandardMaterial({ color: 0x14241c, roughness: 0.6, metalness: 0.5 });
-  MAT.rotor = new THREE.MeshBasicMaterial({ color: new THREE.Color(0x9ef3ff).multiplyScalar(0.6), transparent: true, opacity: 0.25, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
+  MAT.rotor = new THREE.MeshBasicMaterial({ color: new THREE.Color(0x9ef3ff).multiplyScalar(0.5), transparent: true, opacity: 0.09, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
   MAT.canopy = new THREE.MeshStandardMaterial({ color: 0x0a1a2a, roughness: 0.05, metalness: 0.6, transparent: true, opacity: 0.55, envMapIntensity: 2 });
   MAT.hull = new THREE.MeshStandardMaterial({ color: 0x1c1c26, roughness: 0.35, metalness: 0.85 });
   MAT.hullWhite = new THREE.MeshStandardMaterial({ color: 0xc8ccd6, roughness: 0.3, metalness: 0.6 });

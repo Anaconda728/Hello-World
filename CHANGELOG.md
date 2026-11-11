@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.2.0
+
+- **People**: pedestrians, robots and gang members share a new smooth-limbed, jointed body (capsule limbs,
+  shaped torsos, rounded heads, hands and feet). Pedestrians are now full figures in coats with skin tones,
+  optic visors and domed umbrellas they actually hold, instead of pegs.
+- **Movement**: a real walk cycle (knees lift, hips sway, shoulders counter-rotate, elbows bend, the body
+  bobs), running leans forward, idle figures breathe, shift their weight and look around, and pedestrians
+  ease into a sprint when they panic.
+- **Drones**: rounded hulls (teardrop air taxis with tail booms and skids, airship-like ferries with
+  wrap-around window decks and a belly ad screen, saucer-bodied enforcers with a gimballed eye), ducted fans
+  with visibly spinning blades.
+- **Flight**: drones bank into turns, dip their noses with speed, slow into corners and power out, and
+  hover with a slight drift; stunned drones wobble with stalled rotors.
+- Fix: patrol drones no longer all appear right on top of you.
+
 ## 1.1.0
 
 - **Combat**: five weapons: Mono-Katana (melee sweep), SP-9 Smart Pistol (auto-aim), HX-7 Plasma Rifle

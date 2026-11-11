@@ -2,10 +2,11 @@
 // sky traffic streaming between the towers. All instanced for speed.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { DIRS, TILE, tileCenter } from './config.js';
+import { DIRS, TILE, SETTINGS, tileCenter } from './config.js';
 import { MAT, AD_COUNT } from './materials.js';
+import { Humanoids } from './humanoids.js';
 
-const MAX_CARS = 170, MAX_PEDS = 240, N_AIR = 140, N_BLIMPS = 4, N_STEAM = 40, STEAM_P = 14;
+const MAX_CARS = 170, MAX_PEDS = 200, N_AIR = 140, N_BLIMPS = 4, N_STEAM = 40, STEAM_P = 14;
 const LIFE_R = 300; // ambient life exists within this many metres of the focus
 const tmpM = new THREE.Matrix4(), tmpQ = new THREE.Quaternion(), tmpS = new THREE.Vector3(), tmpP = new THREE.Vector3();
 const UP = new THREE.Vector3(0, 1, 0);
@@ -136,38 +137,36 @@ export class Traffic {
     for (let k = 0; k < MAX_CARS; k++) this.carBody.setColorAt(k, c.set(palette[k % palette.length]));
     this.cars = Array.from({ length: MAX_CARS }, () => new Walker(city, 2.4, 9 + Math.random() * 7, 2.6, 2.2));
 
-    // pedestrians
-    const ped = mergeGeometries([
-      new THREE.CylinderGeometry(0.2, 0.24, 1.35, 6).translate(0, 0.9, 0).toNonIndexed(),
-      new THREE.SphereGeometry(0.17, 6, 4).translate(0, 1.75, 0).toNonIndexed(),
-    ]);
-    ped.deleteAttribute('uv');
-    this.pedBody = new THREE.InstancedMesh(ped, new THREE.MeshStandardMaterial({ color: 0x15131c, roughness: 0.8 }), MAX_PEDS);
-    const umb = new THREE.ConeGeometry(0.62, 0.28, 10, 1, true).translate(0, 2.15, 0);
+    // pedestrians: full articulated figures in coats, many under glowing umbrellas
+    this.pedRig = new Humanoids(scene, MAX_PEDS, 'civ');
+    const dome = new THREE.SphereGeometry(0.78, 12, 4, 0, Math.PI * 2, 0, Math.PI * 0.3).translate(0.22, 1.6, 0.28);
+    const shaft = new THREE.CylinderGeometry(0.012, 0.012, 1.0, 5).translate(0.22, 1.85, 0.28);
+    const umb = mergeGeometries([dome.toNonIndexed(), shaft.toNonIndexed()]);
     this.pedUmb = new THREE.InstancedMesh(umb, new THREE.MeshBasicMaterial({
-      color: 0xffffff, toneMapped: false, transparent: true, opacity: 0.85, side: THREE.DoubleSide,
+      color: 0xffffff, toneMapped: false, transparent: true, opacity: 0.8, side: THREE.DoubleSide,
     }), MAX_PEDS);
-    const neon = [[0.2, 2.4, 2.6], [2.6, 0.3, 2.1], [2.6, 1.4, 0.2], [1.2, 0.6, 2.8], [0.4, 2.6, 1.0], [2.4, 2.4, 2.6]];
+    const neon = [[0.2, 2.2, 2.4], [2.4, 0.3, 1.9], [2.4, 1.3, 0.2], [1.1, 0.6, 2.6], [0.4, 2.4, 0.9], [2.2, 2.2, 2.4]];
     for (let k = 0; k < MAX_PEDS; k++) {
       const n = neon[k % neon.length];
       this.pedUmb.setColorAt(k, c.setRGB(n[0], n[1], n[2]));
     }
-    // cybernetics: glowing optic visors and chrome arms on the crowd
-    this.pedVisor = new THREE.InstancedMesh(new THREE.BoxGeometry(0.34, 0.06, 0.1).translate(0, 1.77, 0.14),
-      new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }), MAX_PEDS);
-    this.pedArm = new THREE.InstancedMesh(new THREE.BoxGeometry(0.06, 0.7, 0.06).translate(0.27, 1.05, 0.02),
-      new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }), MAX_PEDS);
+    const coats = [0x1b1a24, 0x232833, 0x2e1c2a, 0x14262a, 0x30281c, 0x3a3d48, 0x101014, 0x7a6418, 0x5a1420, 0x1c3050];
+    const pants = [0x0e0e13, 0x16181f, 0x1c1a16, 0x10141c];
+    const skins = [0x8a6a58, 0x6b4a3a, 0xa88a74, 0x4a332a, 0x9a7a60, 0x70707c];
     const visorCols = [[0.3, 3, 3], [3, 0.3, 2.4], [3, 0.4, 0.3], [0.4, 3, 0.8], [3, 2, 0.2]];
     this.peds = Array.from({ length: MAX_PEDS }, (_, k) => {
-      const w = new Walker(city, (k % 2 ? 1 : -1) * 5.1, 1.1 + Math.random() * 0.7, 6, 0.7);
-      w.umbrella = Math.random() < 0.65;
-      w.visor = Math.random() < 0.55;
-      w.arm = Math.random() < 0.3;
+      const w = new Walker(city, (k % 2 ? 1 : -1) * (4.7 + Math.random() * 0.8), 1.05 + Math.random() * 0.6, 5, 0.7);
+      w.umbrella = Math.random() < 0.6;
       w.phase = Math.random() * 10;
       w.dead = -1; w.panic = 0; w.baseSpeed = w.speed;
+      w.scale = 0.9 + Math.random() * 0.17;
+      w.body = new THREE.Color(coats[Math.floor(Math.random() * coats.length)]);
+      w.legs = new THREE.Color(pants[k % pants.length]);
+      w.skin = new THREE.Color(skins[Math.floor(Math.random() * skins.length)]);
+      // cybernetics: optic visors and glowing trim on some of the crowd
       const vc = visorCols[k % visorCols.length];
-      this.pedVisor.setColorAt(k, c.setRGB(vc[0], vc[1], vc[2]));
-      this.pedArm.setColorAt(k, c.setRGB(vc[2] * 0.8 + 0.4, vc[1] * 0.8 + 0.4, vc[0] * 0.8 + 0.4));
+      w.glow = Math.random() < 0.5 ? new THREE.Color(vc[0], vc[1], vc[2]) : new THREE.Color(0x050508);
+      w.accent = Math.random() < 0.3 ? new THREE.Color(vc[2] * 0.5 + 0.2, vc[1] * 0.5 + 0.2, vc[0] * 0.5 + 0.2) : new THREE.Color(0x050508);
       return w;
     });
 
@@ -247,7 +246,7 @@ export class Traffic {
     this.hwLights = new THREE.InstancedMesh(lights, lightMat, 70);
     for (let k = 0; k < 70; k++) this.hwBody.setColorAt(k, c.set(palette[(k * 5) % palette.length]));
     this.hw = Array.from({ length: 70 }, () => ({ line: null, s: 0, dir: 1, lane: 0, speed: 26 + Math.random() * 14 }));
-    this.instanced = [this.hwBody, this.hwLights, this.carBody, this.carLights, this.pedBody, this.pedUmb, this.pedVisor, this.pedArm, this.airBody, this.airLights];
+    this.instanced = [this.hwBody, this.hwLights, this.carBody, this.carLights, this.pedUmb, this.airBody, this.airLights];
     for (const m of this.instanced) {
       m.frustumCulled = false;
       m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -299,7 +298,7 @@ export class Traffic {
     if (this.spawnTimer <= 0) {
       this.spawnTimer = 0.7;
       this.respawn(this.cars, MAX_CARS, focus);
-      this.respawn(this.peds, MAX_PEDS, focus);
+      this.respawn(this.peds, SETTINGS.quality === 'low' ? 110 : MAX_PEDS, focus);
     }
     let n = 0;
     for (const w of this.cars) {
@@ -316,33 +315,38 @@ export class Traffic {
     this.carBody.count = this.carLights.count = n;
 
     n = 0;
+    this.pedRig.begin(t);
     for (const w of this.peds) {
       if (!w.alive) continue;
-      let lie = 0;
+      let lie = 0, amount = 1;
       if (w.dead >= 0) {
         w.dead += dt;
         if (w.dead > 20) { w.alive = false; w.pinned = false; continue; }
         lie = Math.min(1, w.dead * 3);
+        amount = 0;
       } else {
-        if (w.panic > 0) { w.panic -= dt; w.speed = w.baseSpeed * 3.2; } else w.speed = w.baseSpeed;
+        const panic = w.panic > 0;
+        if (panic) w.panic -= dt;
+        // ease between a stroll and a sprint instead of snapping
+        w.speed += ((panic ? w.baseSpeed * 3.2 : w.baseSpeed) - w.speed) * Math.min(1, dt * 3);
         w.update(dt);
         if (!w.alive) continue;
+        w.phase += dt * w.speed * 4.3 / w.scale;
+        amount = Math.min(1.6, w.speed / w.baseSpeed * 0.5 + 0.5);
       }
-      const bob = lie ? 0 : Math.abs(Math.sin(t * (w.panic > 0 ? 16 : 7) + w.phase)) * 0.05;
-      tmpP.set(w.pos.x, 0.22 + bob + lie * 0.25, w.pos.z);
+      const hold = w.umbrella && !lie && w.panic <= 0;
+      this.pedRig.add({
+        x: w.pos.x, y: 0.22, z: w.pos.z, heading: w.heading, walk: w.phase, amount, lie, hold, scale: w.scale, seed: w.offset + w.baseSpeed * 9,
+        body: w.body, legs: w.legs, skin: w.skin, glow: w.glow, accent: w.accent,
+      });
+      tmpP.set(w.pos.x, 0.22, w.pos.z);
       tmpQ.setFromAxisAngle(UP, w.heading);
-      if (lie) tmpQ.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -lie * Math.PI / 2));
-      tmpM.compose(tmpP, tmpQ, tmpS.set(1, 1, 1));
-      this.pedBody.setMatrixAt(n, tmpM);
-      tmpM.compose(tmpP, tmpQ, tmpS.setScalar(w.umbrella && !lie ? 1 : 0));
+      tmpM.compose(tmpP, tmpQ, tmpS.setScalar(hold ? w.scale : 0));
       this.pedUmb.setMatrixAt(n, tmpM);
-      tmpM.compose(tmpP, tmpQ, tmpS.setScalar(w.visor ? 1 : 0));
-      this.pedVisor.setMatrixAt(n, tmpM);
-      tmpM.compose(tmpP, tmpQ, tmpS.setScalar(w.arm ? 1 : 0));
-      this.pedArm.setMatrixAt(n, tmpM);
       n++;
     }
-    this.pedBody.count = this.pedUmb.count = this.pedVisor.count = this.pedArm.count = n;
+    this.pedRig.end();
+    this.pedUmb.count = n;
 
     for (const g of this.blimps) {
       const u = g.userData;

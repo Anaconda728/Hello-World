@@ -4,20 +4,20 @@ A dark-neon cyberpunk city builder that runs in the browser. Raise towers, fusio
 above, then drop to street level and **walk** or **drive** through an endless rain-soaked megacity. The sprawl
 keeps generating dense city in every direction as you move.
 
-## Download and play (v1.1.0)
+## Download and play (v1.2.0)
 
-1. Download [`releases/NeonSprawl-v1.1.0.zip`](releases/NeonSprawl-v1.1.0.zip) (about 240 KB).
+1. Download [`releases/NeonSprawl-v1.2.0.zip`](releases/NeonSprawl-v1.2.0.zip) (about 240 KB).
 2. Unzip it anywhere and double-click **`Play Neon Sprawl.html`**.
 
 That's it: it runs in your browser straight from the folder, with no install, launcher or internet
 connection. Best in an up-to-date Chrome, Edge or Firefox. `README.txt` in the zip covers controls and
 troubleshooting. If it stutters on a laptop, set **Settings → Graphics quality** to Low or Medium.
 
-## Windows desktop app (v1.1.0)
+## Windows desktop app (v1.2.0)
 
 A standalone Windows build wraps the same game in Electron: its own window, no browser needed.
 
-1. Extract `NeonSprawl-v1.1.0-win64.zip` (right-click → Extract All).
+1. Extract `NeonSprawl-v1.2.0-win64.zip` (right-click → Extract All).
 2. Run **`Neon Sprawl.exe`**. The build isn't code-signed, so on first launch SmartScreen may say
    "Windows protected your PC": click **More info → Run anyway**.
 

@@ -3,7 +3,7 @@
 export const TILE = 12;              // metres per tile
 export const CHUNK = 16;             // tiles per chunk side
 export const CHUNK_W = CHUNK * TILE; // metres per chunk side
-export const VERSION = '1.1.0';
+export const VERSION = '1.2.0';
 
 // Graphics presets: laptops with integrated GPUs should use low/medium.
 export const QUALITY = {

@@ -1,4 +1,4 @@
-NEON SPRAWL  v1.1.0
+NEON SPRAWL  v1.2.0
 ===================
 A dark-neon cyberpunk city builder. Build an endless megacity from above, then walk or
 drive its rain-soaked streets.

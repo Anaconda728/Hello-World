@@ -553,9 +553,9 @@ export function genDataspire(level, seed, cx, cz) {
 }
 
 // ---------------------------------------------------------------- drone hub
-const droneBody = new THREE.BoxGeometry(0.9, 0.25, 0.9);
-const droneRotor = new THREE.CylinderGeometry(0.42, 0.42, 0.04, 12);
-const droneLight = new THREE.BoxGeometry(0.16, 0.12, 0.16);
+const droneBody = new THREE.SphereGeometry(1, 12, 8).scale(0.5, 0.2, 0.55);
+const droneRotor = new THREE.TorusGeometry(0.36, 0.04, 5, 16).rotateX(Math.PI / 2);
+const droneLight = new THREE.SphereGeometry(0.09, 8, 6);
 function droneMesh() {
   const g = new THREE.Group();
   g.add(new THREE.Mesh(droneBody, MAT.metal));

@@ -1,7 +1,7 @@
 {
   "name": "neon-sprawl",
   "productName": "Neon Sprawl",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Neon Sprawl - dark-neon cyberpunk city builder",
   "main": "main.js",
   "private": true

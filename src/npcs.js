@@ -13,6 +13,7 @@ const ROBOT_BODIES = [0xd8dde6, 0x1a1a22, 0xc87a2a, 0x2a8a8a, 0xb0b4c0, 0x5a2a6a
 const ROBOT_GLOWS = [[0.3, 2.8, 3], [3, 0.4, 2.4], [3, 2, 0.3], [0.4, 3, 0.9], [2.8, 2.8, 3]];
 const HOODIES = [0x1c1b22, 0x2a1020, 0x101a18, 0x26221a, 0x121826];
 const DEAD_TIME = 20;
+const ROBOT_JOINT = new THREE.Color(0x17171d);
 const TAUNTS = ['Wrong alley, chrome!', 'You lost? You\'re about to be.', 'Get them!', 'Nobody walks our turf!', 'Light them up!', 'Your augments are ours now!'];
 
 function angleTo(from, to) {
@@ -31,7 +32,8 @@ export class Robots {
       w.body = new THREE.Color(ROBOT_BODIES[k % ROBOT_BODIES.length]);
       const g = ROBOT_GLOWS[k % ROBOT_GLOWS.length];
       w.glow = new THREE.Color(g[0], g[1], g[2]);
-      w.accent = w.glow.clone().multiplyScalar(0.35);
+      w.accent = w.glow.clone().multiplyScalar(0.4);
+      w.visor = w.glow.clone().multiplyScalar(0.6);
       w.talking = false; w.wave = 0; w.hp = 50; w.flee = 0; w.dead = -1;
       return w;
     });
@@ -71,7 +73,7 @@ export class Robots {
       respawnWalkers(this.city, this.list, MAX_ROBOTS, focus, 0, 220);
       for (const w of this.list) if (w.alive && !before.has(w)) { w.seed = (Math.random() * 0xffffffff) >>> 0; w.id = null; w.hp = 50; w.flee = 0; w.dead = -1; w.pinned = false; }
     }
-    this.rig.begin();
+    this.rig.begin(t);
     for (const w of this.list) {
       if (!w.alive) continue;
       let amount = 1, headYaw = 0, lie = 0;
@@ -106,9 +108,9 @@ export class Robots {
       }
       w.wave = Math.max(0, w.wave - dt);
       this.rig.add({
-        x: w.pos.x, y: 0.22, z: w.pos.z, heading: w.heading, walk: w.phase, amount, headYaw, lie,
+        x: w.pos.x, y: 0.22, z: w.pos.z, heading: w.heading, walk: w.phase, amount, headYaw, lie, seed: w.seed % 97,
         armRaise: w.flee > 0 ? 0.9 : w.wave > 0 ? 0.6 + Math.sin(t * 12) * 0.3 : 0, scale: 0.95 + (w.seed % 10) / 60,
-        body: w.body, glow: w.dead >= 0 ? w.accent : w.glow, accent: w.accent,
+        body: w.body, legs: ROBOT_JOINT, glow: w.dead >= 0 ? w.accent : w.visor, accent: w.accent,
       });
     }
     this.rig.end();
@@ -159,7 +161,7 @@ export class Gangs {
       members.push({
         pos: new THREE.Vector3(mx, 0, mz), seed: (seed + k * 7919) >>> 0, heading: Math.atan2(x - mx, z - mz), phase: hash3(seed, k, 3) * 10,
         name: gangMemberName(seed + k), body: new THREE.Color(HOODIES[(seed + k) % HOODIES.length]),
-        scale: 0.92 + hash3(k, seed, 9) * 0.16, hp: 60, dead: -1, cd: 1 + Math.random() * 2, strafe: Math.random() < 0.5 ? 1 : -1, walk: 0,
+        scale: 0.92 + hash3(k, seed, 9) * 0.16, legs: new THREE.Color([0x0c0c10, 0x14161e, 0x1a1410][(seed + k) % 3]), hp: 60, dead: -1, cd: 1 + Math.random() * 2, strafe: Math.random() < 0.5 ? 1 : -1, walk: 0,
       });
     }
     return members;
@@ -241,7 +243,7 @@ export class Gangs {
     this.timer -= dt;
     if (this.timer <= 0) { this.timer = 1; this.refresh(focus); }
     const combat = this.combat;
-    this.rig.begin();
+    this.rig.begin(t);
     for (const g of this.groups.values()) {
       const dp = player ? Math.hypot(player.x - g.x, player.z - g.z) : 1e9;
       const near = dp < 14;
@@ -252,7 +254,7 @@ export class Gangs {
         if (g.calm > 12) { g.hostile = false; g.calm = 0; for (const m of g.members) if (m.dead < 0) { m.pos.set(g.x + (Math.random() - 0.5) * 3, 0, g.z + (Math.random() - 0.5) * 3); } }
       }
       for (const m of g.members) {
-        let lie = 0, amount = 0.25, raise = 0;
+        let lie = 0, amount = 0, raise = 0;
         if (m.dead >= 0) {
           m.dead += dt;
           if (m.dead > DEAD_TIME) continue;
@@ -269,8 +271,8 @@ export class Gangs {
           const sp = 3.6;
           m.pos.x += sx * sp * dt; m.pos.z += sz * sp * dt;
           resolveCircle(m.pos, 0.4, this.city.obstaclesNear(m.pos.x, m.pos.z));
-          m.walk += dt * 10;
-          amount = 1;
+          m.walk += dt * 11 * (toward || 0.7);
+          amount = 1.3;
           raise = 0.85; // gun arm up
           m.cd -= dt;
           if (combat && m.cd <= 0 && d < 45 && Math.abs((player.y || 0)) < 6) {
@@ -288,10 +290,9 @@ export class Gangs {
           if (near || m.talking) want = Math.atan2(player.x - m.pos.x, player.z - m.pos.z);
           m.heading += angleTo(m.heading, want) * Math.min(1, dt * (near ? 3 : 1));
           raise = Math.max(0, Math.sin(t * 0.9 + m.phase)) * (near ? 0.15 : 0.55);
-          m.walk = Math.sin(t * 1.3 + m.phase) * 0.25;
         }
         this.rig.add({
-          x: m.pos.x, y: 0.12, z: m.pos.z, heading: m.heading, walk: m.walk, amount, lie,
+          x: m.pos.x, y: 0.12, z: m.pos.z, heading: m.heading, walk: m.walk, amount, lie, seed: m.phase, legs: m.legs,
           armRaise: raise, headYaw: m.dead >= 0 || g.hostile ? 0 : Math.sin(t * 0.5 + m.phase) * 0.3, scale: m.scale,
           body: m.body, glow: m.dead >= 0 ? g.accent : g.glow, accent: g.accent,
         });

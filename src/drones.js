@@ -2,6 +2,7 @@
 // avenue grid, plus enforcer drones that patrol the streets scanning citizens.
 // Some spawn ambiently around the player; others are deployed with the Drone tool.
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Parts } from './geom.js';
 import { MAT } from './materials.js';
 import { TILE, DIRS, tileCenter } from './config.js';
@@ -10,6 +11,7 @@ import { Walker, respawnWalkers } from './traffic.js';
 const AV = TILE * 12; // main avenues run every 12 tiles
 const PI = Math.PI;
 const UP = new THREE.Vector3(0, 1, 0);
+const _m2 = new THREE.Matrix4(), _m3 = new THREE.Matrix4(), _e = new THREE.Euler();
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _p = new THREE.Vector3(), _s = new THREE.Vector3(1, 1, 1);
 const AMBIENT = { taxi1: 22, taxi2: 18, ferry: 6, enforcer: 20 };
 const HULL_COLORS = [0xd0d4de, 0x20202a, 0xe0b830, 0xb02040, 0x2a6aa0, 0x1a8a6a, 0x8a3ab0, 0xe86a20];
@@ -46,90 +48,142 @@ class InstancedModel {
   }
 }
 
-function rotors(P, pts, r, y) {
-  for (const [x, z] of pts) {
-    P.box('metal', 0.08, 0.08, 0.08, x, y - 0.1, z, 0, false);
-    const d = new THREE.CircleGeometry(r, 16);
-    d.rotateX(-PI / 2);
-    P.geo('rotor', d, x, y, z);
-    const t = new THREE.TorusGeometry(r, 0.05, 4, 20);
-    t.rotateX(PI / 2);
-    P.geo('metal', t, x, y, z);
+// Rotor positions per model [x, y, z, radius]: the blades are drawn separately so they spin.
+const ROTORS = {};
+const ell = (rx, ry, rz, w = 16, h = 10) => new THREE.SphereGeometry(1, w, h).scale(rx, ry, rz);
+// strut between two points
+function strut(P, key, x0, y0, z0, x1, y1, z1, rad) {
+  const a = new THREE.Vector3(x0, y0, z0), b = new THREE.Vector3(x1, y1, z1);
+  const g = new THREE.CylinderGeometry(rad, rad, a.distanceTo(b), 6);
+  g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(UP, b.clone().sub(a).normalize()));
+  P.geo(key, g, (x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+}
+// ducted fan: shroud ring, hub, faint blur disc
+function duct(P, x, y, z, r, glow) {
+  const ring = new THREE.TorusGeometry(r, r * 0.09, 6, 22);
+  ring.rotateX(PI / 2);
+  P.geo('metal', ring, x, y, z);
+  if (glow) {
+    const under = new THREE.TorusGeometry(r, r * 0.03, 4, 22);
+    under.rotateX(PI / 2);
+    P.geo(glow, under, x, y - r * 0.1, z);
   }
+  P.geo('metal', ell(r * 0.14, r * 0.12, r * 0.14, 8, 6), x, y, z);
+  const d = new THREE.CircleGeometry(r * 0.95, 18);
+  d.rotateX(-PI / 2);
+  P.geo('rotor', d, x, y + 0.01, z);
 }
 
 function taxiModel(seats) {
   const P = new Parts();
-  const w = seats === 1 ? 1.3 : 2.2;
-  P.box('hullWhite', w, 0.7, 2.8, 0, 0, 0, 0, false);
-  P.box('hullWhite', w * 0.8, 0.4, 0.8, 0, -0.05, 1.6, 0, false);
-  const can = new THREE.SphereGeometry(1, 14, 8, 0, PI * 2, 0, PI / 2);
-  can.scale(w * 0.46, 0.75, 1.1);
-  P.geo('canopy', can, 0, 0.35, 0.2);
-  for (let s = 0; s < seats; s++) {
-    const x = seats === 1 ? 0 : (s - 0.5) * 0.9;
-    P.geo('cable', new THREE.SphereGeometry(0.17, 8, 6), x, 0.62, 0.1);
-    P.box('cable', 0.36, 0.3, 0.25, x, 0.36, 0.05, 0, false);
-    P.box('neon_cyan', 0.24, 0.04, 0.03, x, 0.64, 0.26, 0, false); // pilot's optic visor
+  const w = seats === 1 ? 1.25 : 2.0;
+  // teardrop pod with a tapering tail boom and fin
+  P.geo('hullWhite', ell(w / 2 + 0.12, 0.5, 1.65), 0, 0, 0);
+  const boom = new THREE.CylinderGeometry(0.05, 0.3, 1.5, 8);
+  boom.rotateX(-PI / 2);
+  P.geo('hullWhite', boom, 0, 0.1, -2.0);
+  const fin = new THREE.CylinderGeometry(0.02, 0.28, 0.6, 4);
+  fin.scale(0.2, 1, 1);
+  P.geo('hullWhite', fin, 0, 0.42, -2.6);
+  P.geo('canopy', ell(w * 0.43, 0.5, 1.0, 14, 8), 0, 0.2, 0.5);
+  for (let k = 0; k < seats; k++) {
+    const x = seats === 1 ? 0 : (k - 0.5) * 0.8;
+    P.geo('cable', ell(0.15, 0.17, 0.16, 8, 6), x, 0.44, 0.45);
+    P.geo('cable', ell(0.2, 0.2, 0.14, 8, 6), x, 0.14, 0.4);
+    const visor = new THREE.CylinderGeometry(0.15, 0.15, 0.04, 8, 1, true, -0.9, 1.8);
+    P.geo('neon_cyan', visor, x, 0.46, 0.46);
   }
-  const ax = w / 2 + 0.7;
-  for (const [x, z] of [[-ax, -1], [ax, -1], [-ax, 1], [ax, 1]]) P.box('metal', Math.abs(x) - w / 2 + 0.1, 0.08, 0.12, Math.sign(x) * (w / 2 + (Math.abs(x) - w / 2) / 2), 0.15, z, 0, false);
-  rotors(P, [[-ax, -1], [ax, -1], [-ax, 1], [ax, 1]], 0.62, 0.25);
-  P.box('neon_white', w * 0.7, 0.07, 0.04, 0, 0, 2.02, 0, false);
-  P.box('neon_red', w * 0.8, 0.07, 0.04, 0, 0.1, -1.42, 0, false);
-  P.box('neon_magenta', w + 0.02, 0.04, 2.4, 0, -0.33, 0, 0, false);
+  const ax = w / 2 + 0.95;
+  ROTORS['taxi' + seats] = [];
+  for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+    strut(P, 'metal', sx * w * 0.3, 0.05, sz * 0.7, sx * ax, 0.22, sz * 1.25, 0.05);
+    duct(P, sx * ax, 0.25, sz * 1.25, 0.62);
+    ROTORS['taxi' + seats].push([sx * ax, 0.25, sz * 1.25, 0.58]);
+  }
+  for (const sx of [-1, 1]) {
+    const skid = new THREE.CylinderGeometry(0.03, 0.03, 2.2, 5);
+    skid.rotateX(PI / 2);
+    P.geo('metal', skid, sx * w * 0.36, -0.68, 0.1);
+    strut(P, 'metal', sx * w * 0.3, -0.35, 0.7, sx * w * 0.36, -0.68, 0.8, 0.025);
+    strut(P, 'metal', sx * w * 0.3, -0.35, -0.5, sx * w * 0.36, -0.68, -0.6, 0.025);
+  }
+  P.geo('neon_white', ell(0.12, 0.07, 0.06, 8, 6), 0, -0.08, 1.62);
+  P.geo('neon_red', ell(0.08, 0.08, 0.05, 8, 6), 0, 0.12, -2.74);
+  const belly = new THREE.TorusGeometry(1, 0.03, 4, 24);
+  belly.rotateX(PI / 2); belly.scale(w / 2, 1, 1.4);
+  P.geo('neon_magenta', belly, 0, -0.3, 0);
   return P.merge();
+}
+
+// window band wrapped around a hull of the given radii (unit cylinder section, then scaled)
+function windowBand(P, side, lo, hi, len, rx, ry, rz, y, z) {
+  const t0 = side > 0 ? PI / 2 + lo : 1.5 * PI - hi;
+  const g = new THREE.CylinderGeometry(1.006, 1.006, len / rz, 8, 1, true, t0, hi - lo);
+  const uv = g.attributes.uv;
+  for (let k = 0; k < uv.count; k++) { const u = uv.getX(k), v = uv.getY(k); uv.setXY(k, v * (len / 12), side > 0 ? u : 1 - u); }
+  g.rotateX(PI / 2);
+  g.scale(rx, ry, rz);
+  P.geo('ferryWin', g, 0, y, z);
 }
 
 function ferryModel() {
   const P = new Parts();
-  P.box('hull', 7, 4.2, 26, 0, 0, 0, 0, false);
-  const nose = new THREE.CylinderGeometry(0, 3.6, 7, 4, 1);
-  nose.rotateY(PI / 4); nose.rotateX(PI / 2); nose.scale(1.36, 0.82, 1);
-  P.geo('hull', nose, 0, 0, 16.4);
-  P.box('hull', 5.4, 2, 17, 0, 3, -1, 0, false);
-  // two decks of passenger windows on both sides
+  // airship-like lifting body: long rounded hull with a smaller observation deck on top
+  const hull = new THREE.CapsuleGeometry(1, 5.2, 6, 18);
+  hull.rotateX(PI / 2); hull.scale(3.6, 2.3, 3.6);
+  P.geo('hull', hull, 0, 0, 0);
+  const deck = new THREE.CapsuleGeometry(1, 3.6, 5, 14);
+  deck.rotateX(PI / 2); deck.scale(2.7, 1.5, 2.9);
+  P.geo('hull', deck, 0, 2.0, -1);
+  P.geo('canopy', ell(2.3, 1.0, 2.2, 14, 8), 0, 1.1, 10.4); // bridge
   for (const sx of [-1, 1]) {
-    for (const [y, len, z] of [[0.6, 22, 0], [3.1, 15, -1]]) {
-      const g = new THREE.PlaneGeometry(len, 1.3);
-      const uv = g.attributes.uv;
-      for (let k = 0; k < uv.count; k++) uv.setX(k, uv.getX(k) * (len / 12));
-      g.rotateY(sx * PI / 2);
-      P.geo('ferryWin', g, sx * ((y > 2 ? 2.7 : 3.5) + 0.03), y, z);
-    }
-    P.box('neon_cyan', 0.06, 0.1, 22, sx * 3.53, -0.4, 0, 0, false);
-    P.plane('ad' + (sx > 0 ? 2 : 5), 9, 2.6, sx * 3.54, -1.3, -6, sx * PI / 2);
+    windowBand(P, sx, 0.06, 0.42, 18, 3.6, 2.3, 3.6, 0, 0);
+    windowBand(P, sx, 0.05, 0.6, 10, 2.7, 1.5, 2.9, 2.0, -1);
+    const strip = new THREE.CylinderGeometry(0.06, 0.06, 18, 5);
+    strip.rotateX(PI / 2);
+    P.geo('neon_cyan', strip, sx * 3.5, -0.55, 0);
+    const fin = new THREE.BoxGeometry(0.25, 3.2, 4.2);
+    fin.rotateZ(-sx * 0.45);
+    P.geo('hull', fin, sx * 1.9, 2.5, -10.6);
+    P.geo(sx < 0 ? 'blinkA' : 'neon_green', ell(0.3, 0.3, 0.3, 8, 6), sx * 3.6, 0.2, 6);
   }
-  P.box('neon_amber', 6, 0.1, 0.1, 0, 2.15, 12.9, 0, false);
-  // four big ducted fans
-  for (const [x, z] of [[-5.6, -9], [5.6, -9], [-5.6, 9], [5.6, 9]]) {
-    P.box('hull', 2.4, 0.5, 1, Math.sign(x) * 4.2, 0.5, z, 0, false);
-    const duct = new THREE.CylinderGeometry(2.4, 2.4, 1.1, 20, 1, true);
-    P.geo('metal', duct, x, 0.6, z);
-    const d = new THREE.CircleGeometry(2.3, 20);
-    d.rotateX(-PI / 2);
-    P.geo('rotor', d, x, 0.6, z);
-    const ring = new THREE.TorusGeometry(2.4, 0.08, 4, 24);
-    ring.rotateX(PI / 2);
-    P.geo('neon_cyan', ring, x, 0.05, z);
+  P.plane('ad2', 11, 4.4, 0, -2.34, 0, PI / 2, PI / 2); // belly screen, readable from the street
+  ROTORS.ferry = [];
+  for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+    const x = sx * 5.9, z = sz * 8;
+    strut(P, 'hull', sx * 3.0, 0.2, z, sx * 3.7, 0.5, z, 0.45);
+    duct(P, x, 0.5, z, 2.3, 'neon_cyan');
+    const shroud = new THREE.CylinderGeometry(2.42, 2.3, 0.9, 22, 1, true);
+    P.geo('hull', shroud, x, 0.5, z);
+    ROTORS.ferry.push([x, 0.5, z, 2.2]);
   }
-  P.box('blinkA', 0.5, 0.5, 0.5, -3.6, 2.3, 10, 0, false);
-  P.box('neon_green', 0.5, 0.5, 0.5, 3.6, 2.3, 10, 0, false);
-  P.box('neon_white', 2.8, 0.25, 0.1, 0, 0.6, 19.7, 0, false);
-  P.box('neon_red', 6.4, 0.2, 0.1, 0, 0, -13.05, 0, false);
+  P.geo('neon_white', ell(1.2, 0.18, 0.2, 10, 6), 0, 0.1, 12.9);
+  P.geo('neon_red', ell(2.2, 0.16, 0.2, 10, 6), 0, 0.2, -12.85);
   return P.merge();
 }
 
 function enforcerModel() {
   const P = new Parts();
-  P.box('hull', 1.6, 0.55, 2, 0, 0, 0, 0, false);
-  P.box('hullWhite', 1.7, 0.18, 1.2, 0, 0.32, -0.1, 0, false);
-  P.geo('neon_red', new THREE.SphereGeometry(0.2, 10, 8), 0, -0.25, 0.95); // the scanning eye
-  P.box('metal', 0.3, 0.3, 0.6, -0.5, -0.4, 0.4, 0, false);
-  P.box('metal', 0.3, 0.3, 0.6, 0.5, -0.4, 0.4, 0, false);
-  rotors(P, [[-1.4, -1.1], [1.4, -1.1], [-1.4, 1.1], [1.4, 1.1]], 0.6, 0.15);
-  for (const [x, z] of [[-1.4, -1.1], [1.4, -1.1], [-1.4, 1.1], [1.4, 1.1]]) P.box('metal', Math.abs(x) - 0.7, 0.08, 0.12, Math.sign(x) * (0.35 + (Math.abs(x) - 0.7) / 2), 0.1, z, 0, false);
-  P.box('paint', 1.62, 0.12, 0.02, 0, 0, 1.01, 0, false);
+  // armoured saucer body, white carapace, gimballed red eye, twin gun pods
+  P.geo('hull', ell(0.85, 0.36, 1.1), 0, 0, 0);
+  const shell = new THREE.SphereGeometry(1, 14, 6, 0, PI * 2, 0, PI / 2);
+  shell.scale(0.72, 0.3, 0.86);
+  P.geo('hullWhite', shell, 0, 0.14, -0.06);
+  P.geo('metal', ell(0.27, 0.24, 0.27, 10, 8), 0, -0.3, 0.62);
+  P.geo('neon_red', ell(0.13, 0.13, 0.1, 10, 8), 0, -0.34, 0.86);
+  for (const sx of [-1, 1]) {
+    const pod = new THREE.CapsuleGeometry(0.09, 0.55, 2, 6);
+    pod.rotateX(PI / 2);
+    P.geo('metal', pod, sx * 0.48, -0.36, 0.25);
+    P.geo('neon_red', ell(0.04, 0.04, 0.03, 6, 4), sx * 0.48, -0.36, 0.63);
+  }
+  P.cyl('metal', 0.012, 0.012, 0.7, -0.3, 0.3, -0.6, 4, false);
+  ROTORS.enforcer = [];
+  for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+    strut(P, 'metal', sx * 0.6, 0.05, sz * 0.6, sx * 1.35, 0.16, sz * 1.15, 0.055);
+    duct(P, sx * 1.35, 0.18, sz * 1.15, 0.6);
+    ROTORS.enforcer.push([sx * 1.35, 0.18, sz * 1.15, 0.56]);
+  }
   return P.merge();
 }
 
@@ -143,8 +197,10 @@ class GridFlyer {
   spawnNear(x, z) {
     this.ax = Math.round(x / AV); this.az = Math.round(z / AV);
     this.dir = Math.floor(Math.random() * 4);
+    this.next = this.pick(this.ax + DIRS[this.dir][0], this.az + DIRS[this.dir][1], this.dir);
     this.t = Math.random();
     this.alive = true;
+    this.cur = this.speed; this.bank = 0; this.pitch = 0;
     this.point(this.pos);
     this.heading = Math.atan2(DIRS[this.dir][0], DIRS[this.dir][1]);
   }
@@ -155,33 +211,47 @@ class GridFlyer {
     const z = (this.az + dz * this.t) * AV + TILE / 2 + dx * lane;
     return out.set(x, this.alt, z);
   }
-  choose() {
-    const back = (this.dir + 2) % 4;
-    let opts = [0, 1, 2, 3].filter((d) => d !== back);
+  // Which way to go on arriving at intersection (ax, az) while heading `dir`.
+  pick(ax, az, dir) {
+    const back = (dir + 2) % 4;
+    const opts = [0, 1, 2, 3].filter((d) => d !== back);
     if (this.home) {
       const hx = Math.round(this.home.x / AV), hz = Math.round(this.home.z / AV);
-      if (Math.abs(this.ax - hx) + Math.abs(this.az - hz) > 2) {
-        opts.sort((a, b) => (Math.abs(this.ax + DIRS[a][0] - hx) + Math.abs(this.az + DIRS[a][1] - hz)) - (Math.abs(this.ax + DIRS[b][0] - hx) + Math.abs(this.az + DIRS[b][1] - hz)));
-        this.dir = opts[0];
-        return;
+      if (Math.abs(ax - hx) + Math.abs(az - hz) > 2) {
+        const dist = (d) => Math.abs(ax + DIRS[d][0] - hx) + Math.abs(az + DIRS[d][1] - hz);
+        opts.sort((a, b) => dist(a) - dist(b));
+        return opts[0];
       }
     }
-    this.dir = Math.random() < 0.55 ? this.dir : opts[Math.floor(Math.random() * opts.length)];
+    return Math.random() < 0.55 ? dir : opts[Math.floor(Math.random() * opts.length)];
   }
   update(dt) {
-    this.t += (this.speed * dt) / AV;
+    // ease off the throttle coming into a turn, power out of it
+    const turning = (this.next !== this.dir && this.t > 0.74) || (this.turned && this.t < 0.14);
+    const before = this.cur;
+    this.cur += (this.speed * (turning ? 0.45 : 1) - this.cur) * Math.min(1, dt * 1.3);
+    const accel = (this.cur - before) / Math.max(dt, 1e-3);
+    this.t += (this.cur * dt) / AV;
     while (this.t >= 1) {
       this.t -= 1;
       this.ax += DIRS[this.dir][0]; this.az += DIRS[this.dir][1];
-      this.choose();
+      this.turned = this.next !== this.dir;
+      this.dir = this.next;
+      this.next = this.pick(this.ax + DIRS[this.dir][0], this.az + DIRS[this.dir][1], this.dir);
     }
     const tgt = this.point(_p);
-    this.pos.lerp(tgt, 1 - Math.exp(-dt * 3));
+    this.pos.lerp(tgt, 1 - Math.exp(-dt * 2.2));
     const want = Math.atan2(DIRS[this.dir][0], DIRS[this.dir][1]);
     let d = want - this.heading;
     d = Math.atan2(Math.sin(d), Math.cos(d));
-    this.heading += d * Math.min(1, dt * 2);
-    this.bank = -d * 0.5;
+    const turn = d * Math.min(1, dt * 1.6);
+    this.heading += turn;
+    // roll into turns, nose down with speed, pitch with acceleration
+    const heavy = this.type === 'ferry' ? 0.35 : 1;
+    const k = Math.min(1, dt * 3);
+    const yawRate = turn / Math.max(dt, 1e-3);
+    this.bank += (THREE.MathUtils.clamp(-yawRate * 0.6, -0.6, 0.6) * heavy - this.bank) * k;
+    this.pitch += ((0.03 + (this.cur / this.speed) * 0.07 + THREE.MathUtils.clamp(accel * 0.012, -0.12, 0.12)) * heavy - this.pitch) * k;
   }
 }
 
@@ -216,7 +286,7 @@ export class Drones {
       enforcer: new InstancedModel(scene, enforcerModel(), 60, null),
     };
     // enforcer extras: red/blue lightbar, searchlight cone, sweeping laser scan fan
-    this.siren = new THREE.InstancedMesh(new THREE.BoxGeometry(0.9, 0.12, 0.25).translate(0, 0.45, -0.1), new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }), 60);
+    this.siren = new THREE.InstancedMesh(new THREE.CapsuleGeometry(0.07, 0.6, 3, 8).rotateZ(PI / 2).translate(0, 0.47, -0.1), new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }), 60);
     const cone = new THREE.ConeGeometry(4.5, 22, 20, 1, true).translate(0, -11, 0);
     const beamMat = MAT.beam.clone();
     beamMat.opacity = 0.07;
@@ -227,6 +297,14 @@ export class Drones {
     fan.computeVertexNormals();
     this.fan = new THREE.InstancedMesh(fan, MAT.scanFan, 60);
     for (const m of [this.siren, this.beam, this.fan]) { m.frustumCulled = false; m.count = 0; scene.add(m); }
+    // rotor blades for every drone, spun individually
+    const bl = [];
+    for (let k = 0; k < 3; k++) bl.push(new THREE.BoxGeometry(1, 0.02, 0.13).translate(0.5, 0, 0).rotateY((k / 3) * PI * 2).toNonIndexed());
+    this.blades = new THREE.InstancedMesh(mergeGeometries(bl), new THREE.MeshStandardMaterial({ color: 0x0c0c12, roughness: 0.5, metalness: 0.6 }), 1300);
+    this.blades.frustumCulled = false; this.blades.count = 0;
+    this.blades.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    scene.add(this.blades);
+    this.nb = 0;
 
     this.ambient = [];
     for (const [type, n] of Object.entries(AMBIENT)) {
@@ -258,8 +336,10 @@ export class Drones {
     const c = a.home || focus;
     if (a.type === 'enforcer') {
       const fi = Math.floor(c.x / TILE), fj = Math.floor(c.z / TILE);
-      for (let r = 0; r < 12; r++) for (let k = 0; k < 8; k++) {
-        const i = fi + Math.round((Math.random() * 2 - 1) * r), j = fj + Math.round((Math.random() * 2 - 1) * r);
+      // deployed drones start at their post; ambient patrols are scattered around the area
+      for (let r = a.home ? 0 : 6; r < 20; r++) for (let k = 0; k < 6; k++) {
+        const ang = Math.random() * PI * 2, rr = a.home ? Math.random() * r : r + Math.random() * 12;
+        const i = fi + Math.round(Math.cos(ang) * rr), j = fj + Math.round(Math.sin(ang) * rr);
         if (this.city.isRoad(i, j)) { a.spawn(i, j); if (a.alive) return; }
       }
     } else {
@@ -291,6 +371,7 @@ export class Drones {
     }
 
     for (const m of Object.values(this.models)) m.begin();
+    this.nb = 0;
     let e = 0;
     const col = new THREE.Color();
     this.scanCd = Math.max(0, this.scanCd - dt);
@@ -301,11 +382,15 @@ export class Drones {
       if (a.stunT > 0) { a.stunT -= dt; a.alt = Math.max(4, a.alt - 5 * dt); } else a.update(dt);
       if (!a.alive) continue;
       if (a.type === 'enforcer') {
-        const y = a.alt + Math.sin(t * 0.8 + a.phase) * 1.2;
+        // hover: slow drift plus a faster shimmy, leaning into its motion
+        const y = a.alt + Math.sin(t * 0.8 + a.phase) * 1.0 + Math.sin(t * 2.3 + a.phase * 3) * 0.15;
         _p.set(a.pos.x, y, a.pos.z);
-        _q.setFromAxisAngle(UP, a.heading);
+        this.lean(a, dt, a.pos.x, a.pos.z, a.heading);
+        const wob = a.stunT > 0 ? 0.5 : 0.03;
+        _q.setFromEuler(_e.set(a.rp + Math.sin(t * 1.9 + a.phase) * wob, a.heading + Math.sin(t * 0.6 + a.phase) * 0.12, a.rb + Math.cos(t * 1.6 + a.phase) * wob, 'YXZ'));
         _m.compose(_p, _q, _s.set(1, 1, 1));
         this.models.enforcer.add(_m);
+        this.spin(_m, 'enforcer', a.stunT > 0 ? t * 0.1 : t, a.phase);
         this.siren.setMatrixAt(e, _m);
         this.siren.setColorAt(e, Math.sin(t * 9 + a.phase) > 0 ? col.setRGB(4, 0.2, 0.3) : col.setRGB(0.3, 0.8, 4));
         _q.setFromEuler(new THREE.Euler(Math.sin(t * 0.9 + a.phase) * 0.35, a.heading, Math.cos(t * 0.7 + a.phase) * 0.35, 'YXZ'));
@@ -321,20 +406,28 @@ export class Drones {
           this.onScan?.(a);
         }
       } else {
-        _p.set(a.pos.x, a.pos.y + Math.sin(t * 1.1 + a.phase) * (a.type === 'ferry' ? 0.8 : 0.4), a.pos.z);
-        _q.setFromEuler(new THREE.Euler(0, a.heading, a.bank || 0, 'YXZ'));
+        const ferry = a.type === 'ferry';
+        _p.set(a.pos.x, a.pos.y + Math.sin(t * (ferry ? 0.5 : 1.1) + a.phase) * (ferry ? 0.9 : 0.35) + Math.sin(t * 2.7 + a.phase * 2) * (ferry ? 0 : 0.06), a.pos.z);
+        _q.setFromEuler(_e.set(a.pitch + Math.sin(t * 0.9 + a.phase) * 0.015, a.heading, a.bank + Math.sin(t * 0.7 + a.phase * 2) * (ferry ? 0.012 : 0.03), 'YXZ'));
         _m.compose(_p, _q, _s.set(1, 1, 1));
         this.models[a.type].add(_m, a.color);
+        this.spin(_m, a.type, t, a.phase);
       }
     }
     for (const d of [...this.pursuers, ...this.wrecks]) {
       const wreck = !d.pursuer;
       _p.copy(d.pos);
       if (!wreck) _p.y += Math.sin(t * 2 + d.phase) * 0.4;
-      _q.setFromEuler(new THREE.Euler(wreck ? d.spin * 0.7 : 0, wreck ? d.spin : d.heading, wreck ? d.spin * 0.4 : 0, 'YXZ'));
+      if (wreck) _q.setFromEuler(_e.set(d.spin * 0.7, d.spin, d.spin * 0.4, 'YXZ'));
+      else {
+        this.lean(d, dt, d.pos.x, d.pos.z, d.heading);
+        const wob = d.stunT > 0 ? 0.5 : 0.04;
+        _q.setFromEuler(_e.set(d.rp + 0.12 + Math.sin(t * 2.1 + d.phase) * wob, d.heading, d.rb + Math.cos(t * 1.7 + d.phase) * wob, 'YXZ'));
+      }
       const s = d.heavy ? 1.8 : 1;
       _m.compose(_p, _q, _s.set(s, s, s));
       this.models.enforcer.add(_m);
+      this.spin(_m, 'enforcer', wreck || d.stunT > 0 ? t * 0.15 : t, d.phase || 0);
       if (wreck || e >= 60) continue;
       this.siren.setMatrixAt(e, _m);
       this.siren.setColorAt(e, Math.sin(t * 14 + d.phase) > 0 ? col.setRGB(5, 0.2, 0.3) : col.setRGB(0.3, 0.8, 5));
@@ -345,12 +438,39 @@ export class Drones {
       this.fan.setMatrixAt(e, _m);
       e++;
     }
+    this.blades.count = this.nb;
+    this.blades.instanceMatrix.needsUpdate = true;
     for (const m of Object.values(this.models)) m.end();
     for (const m of [this.siren, this.beam, this.fan]) {
       m.count = e;
       m.instanceMatrix.needsUpdate = true;
       if (m.instanceColor) m.instanceColor.needsUpdate = true;
     }
+  }
+
+  // Add the spinning blades for one drone (matrix = its final transform).
+  spin(matrix, type, t, phase, scale = 1) {
+    for (let k = 0; k < 4; k++) {
+      if (this.nb >= 1300) return;
+      const r = ROTORS[type][k];
+      _m2.makeTranslation(r[0], r[1], r[2]);
+      _m3.makeRotationY((t * 31 + phase * 7) * (k % 2 ? 1 : -1) + k);
+      _m2.multiply(_m3).multiply(_m3.makeScale(r[3], 1, r[3]));
+      _m3.multiplyMatrices(matrix, _m2);
+      this.blades.setMatrixAt(this.nb++, _m3);
+    }
+  }
+  // Smoothed lean for a hovering drone from how its position and heading are changing.
+  lean(a, dt, x, z, heading) {
+    if (a.lx === undefined) { a.lx = x; a.lz = z; a.lh = heading; a.rp = 0; a.rb = 0; }
+    const inv = 1 / Math.max(dt, 1e-3);
+    const vx = (x - a.lx) * inv, vz = (z - a.lz) * inv;
+    const dh = Math.atan2(Math.sin(heading - a.lh), Math.cos(heading - a.lh)) * inv;
+    a.lx = x; a.lz = z; a.lh = heading;
+    const fwd = vx * Math.sin(heading) + vz * Math.cos(heading), lat = vx * Math.cos(heading) - vz * Math.sin(heading);
+    const k = Math.min(1, dt * 4);
+    a.rp += (THREE.MathUtils.clamp(fwd * 0.022, -0.35, 0.35) - a.rp) * k;
+    a.rb += (THREE.MathUtils.clamp(-lat * 0.022 - dh * 0.35, -0.4, 0.4) - a.rb) * k;
   }
 
   // ------------------------------------------------------------ combat
