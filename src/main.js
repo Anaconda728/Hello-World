@@ -23,6 +23,7 @@ import { Marker } from './markers.js';
 import { Conversation } from './conversation.js';
 import { Combat, WEAPONS } from './combat.js';
 import { Wanted, CRIME } from './wanted.js';
+import { Landmarks } from './landmarks.js';
 
 const PREFS_KEY = 'neonsprawl.prefs.v1';
 const DEMO_SEED = 7331;
@@ -62,7 +63,9 @@ renderer.toneMappingExposure = 1.05;
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 6000);
-scene.environment = initMaterials(renderer);
+// texture detail follows the saved graphics setting (changing it takes effect on the next launch)
+const texQuality = { low: { hi: false, normals: false }, medium: { hi: false, normals: true }, high: { hi: true, normals: true } }[loadPrefs().quality] || { hi: false, normals: true };
+scene.environment = initMaterials(renderer, texQuality);
 
 // post: bloom for the neon, then a cyberpunk grade (vignette, grain, fringe, scanlines,
 // occasional signal glitch) and the optional optic-overlay vision mode
@@ -128,6 +131,8 @@ const robots = new Robots(scene, city);
 const gangs = new Gangs(scene, city);
 const drones = new Drones(scene, city);
 const marker = new Marker(scene);
+const landmarks = new Landmarks(scene);
+let lastDistrict = null, districtT = 0;
 const prefs = Object.assign({ rain: true, sound: false, fx: true, growth: true, quality: 'medium', showFps: false, sens: 1 }, loadPrefs());
 if (!QUALITY[prefs.quality]) prefs.quality = 'medium';
 
@@ -682,6 +687,25 @@ function tick() {
     }
   } else ui.setWanted(0, 0, false);
   world.update(dt, t, camera, f);
+  landmarks.update(dt, t, city.seed, f);
+  // which district are we in, and which way is home
+  districtT -= dt;
+  if (state === 'game' && districtT <= 0) {
+    districtT = 0.25;
+    const pp = mode === 'build' ? build.smooth.target : mode === 'walk' ? walk.pos : drive.pos;
+    const d = city.district(Math.floor(pp.x / TILE), Math.floor(pp.z / TILE));
+    const key = city.seed + ':' + d.id;
+    let home = null;
+    const hd = Math.hypot(pp.x - 6, pp.z - 6);
+    if (hd > 150) {
+      const dir = new THREE.Vector3();
+      camera.getWorldDirection(dir);
+      const len = Math.hypot(dir.x, dir.z) || 1, fx = dir.x / len, fz = dir.z / len, dx = 6 - pp.x, dz = 6 - pp.z;
+      home = { dist: hd, rel: Math.atan2(dx * -fz + dz * fx, dx * fx + dz * fz) };
+    }
+    ui.setDistrict(d, lastDistrict !== null && lastDistrict !== key && mode !== 'build', home);
+    lastDistrict = key;
+  }
   animateMaterials(t);
 
   vision += (visionTarget - vision) * Math.min(1, dt * 6);

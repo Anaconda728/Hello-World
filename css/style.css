@@ -351,3 +351,20 @@ body.mode-walk #territory, body.mode-drive #territory { top: 150px; }
   #title .panel { padding: 12px; gap: 7px; }
   button.big { padding: 10px 16px; font-size: 13px; }
 }
+
+/* ---------------------------------------------------------- districts / wayfinding */
+#district { position: absolute; top: 74px; right: 228px; padding: 7px 12px; text-align: right; background: var(--bg); border: 1px solid var(--line);
+  border-right: 3px solid var(--dc, var(--cyan)); min-width: 190px; }
+#district b { display: block; font-family: Orbitron, sans-serif; font-size: 14px; letter-spacing: 0.12em; color: var(--dc, var(--cyan)); text-shadow: 0 0 8px var(--dc, var(--cyan)); text-transform: uppercase; }
+#district span { display: block; font-size: 11px; color: var(--dim); letter-spacing: 0.1em; }
+#district em { display: none; font-style: normal; font-size: 12px; color: #ffd23e; margin-top: 4px; }
+#district em.show { display: block; }
+#district em .arrow { display: inline-block; font-style: normal; }
+#district em u { text-decoration: none; }
+#entering { position: absolute; left: 50%; top: 24%; transform: translateX(-50%); text-align: center; pointer-events: none; opacity: 0; }
+#entering.show { animation: enter 4s forwards; }
+#entering small { display: block; letter-spacing: 0.5em; font-size: 12px; color: var(--dim); }
+#entering b { display: block; font-family: Orbitron, sans-serif; font-weight: 900; font-size: clamp(30px, 5vw, 58px); letter-spacing: 0.14em; color: var(--dc, var(--cyan)); text-shadow: 0 0 22px var(--dc, var(--cyan)); text-transform: uppercase; }
+#entering span { display: block; letter-spacing: 0.3em; font-size: 13px; color: #fff; text-transform: uppercase; }
+@keyframes enter { 0% { opacity: 0; letter-spacing: 0.3em; } 12% { opacity: 1; } 75% { opacity: 1; } 100% { opacity: 0; } }
+@media (max-width: 1150px) { #district { right: auto; left: 12px; top: 228px; text-align: left; border-right: 1px solid var(--line); border-left: 3px solid var(--dc, var(--cyan)); } }

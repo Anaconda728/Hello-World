@@ -1,6 +1,7 @@
 // Procedural canvas textures + the shared material palette.
 import * as THREE from 'three';
 import { mulberry32 } from './rng.js';
+import { setAnisotropy, facadeSet, asphaltSet, pavingSet, roofSet, metalSet, groundSet, grassSet, paintWear, worldMapped } from './textures.js';
 
 export const MAT = {};
 export const NEON = {
@@ -25,76 +26,6 @@ function tex(c, { srgb = true, repeat = true } = {}) {
   if (repeat) t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.anisotropy = maxAniso;
   return t;
-}
-
-// 8x8 window cells, each cell = one 3m bay x one 3.5m floor. UV (0,0) is always wall.
-function windowTexture(seed, palette, lit, style = 'grid') {
-  const r = mulberry32(seed);
-  const [c, g] = canvas(512, 512);
-  g.fillStyle = '#06060b';
-  g.fillRect(0, 0, 512, 512);
-  // faint panel seams
-  g.fillStyle = '#0b0b14';
-  for (let y = 0; y < 8; y++) g.fillRect(0, y * 64 + 60, 512, 4);
-  const cw = 64, ch = 64;
-  for (let row = 0; row < 8; row++) {
-    // some floors are mostly dark, some mostly lit -> more natural look
-    const floorBias = r() < 0.25 ? -0.25 : r() < 0.2 ? 0.3 : 0;
-    for (let col = 0; col < 8; col++) {
-      const x = col * cw, y = row * ch;
-      const isLit = r() < lit + floorBias;
-      if (style === 'ribbon') {
-        // continuous glass ribbon, segments lit
-        g.fillStyle = isLit ? r.pick(palette) : '#0c1220';
-        g.globalAlpha = isLit ? r.range(0.55, 1) : 1;
-        g.fillRect(x, y + 18, cw, 30);
-        g.globalAlpha = 1;
-        g.fillStyle = '#05050a';
-        g.fillRect(x, y + 18, 3, 30);
-        continue;
-      }
-      if (style === 'server') {
-        // server racks: rows of tiny status LEDs behind vents
-        g.fillStyle = '#0a0d12';
-        g.fillRect(x + 4, y + 6, cw - 8, ch - 12);
-        for (let s = 0; s < 4; s++) {
-          for (let t = 0; t < 6; t++) {
-            if (r() < lit + floorBias) {
-              g.fillStyle = r.pick(palette);
-              g.fillRect(x + 8 + t * 8.5, y + 12 + s * 12, 4, 3);
-            }
-          }
-        }
-        continue;
-      }
-      if (style === 'dense') {
-        for (let s = 0; s < 2; s++) {
-          for (let t = 0; t < 2; t++) {
-            const l2 = r() < lit + floorBias;
-            g.fillStyle = l2 ? r.pick(palette) : '#0d1019';
-            g.globalAlpha = l2 ? r.range(0.5, 1) : 1;
-            g.fillRect(x + 6 + s * 28, y + 8 + t * 28, 20, 18);
-          }
-        }
-        g.globalAlpha = 1;
-        continue;
-      }
-      if (isLit) {
-        g.fillStyle = r.pick(palette);
-        g.globalAlpha = r.range(0.45, 1);
-      } else {
-        g.fillStyle = r() < 0.5 ? '#0d1019' : '#111523';
-      }
-      g.fillRect(x + 10, y + 14, cw - 20, ch - 26);
-      g.globalAlpha = 1;
-      if (isLit && r() < 0.35) {
-        // half-drawn blinds
-        g.fillStyle = 'rgba(0,0,0,0.55)';
-        g.fillRect(x + 10, y + 14, cw - 20, r.range(6, 26));
-      }
-    }
-  }
-  return tex(c);
 }
 
 function glyphs(r, n) {
@@ -170,43 +101,6 @@ function adTexture(seed, i) {
   g.fillStyle = 'rgba(0,0,0,0.25)';
   for (let y = 0; y < 256; y += 4) g.fillRect(0, y, 512, 1);
   return c;
-}
-
-function asphaltTexture() {
-  const r = mulberry32(7);
-  const [c, g] = canvas(256, 256);
-  g.fillStyle = '#0c0c12';
-  g.fillRect(0, 0, 256, 256);
-  for (let k = 0; k < 4000; k++) {
-    const v = r.int(8, 26);
-    g.fillStyle = `rgb(${v},${v},${v + 4})`;
-    g.fillRect(r() * 256, r() * 256, 1.5, 1.5);
-  }
-  // puddles (darker, will look glossier)
-  for (let k = 0; k < 7; k++) {
-    g.fillStyle = 'rgba(0,0,0,0.5)';
-    g.beginPath();
-    g.ellipse(r() * 256, r() * 256, r.range(10, 40), r.range(6, 20), r() * 3, 0, Math.PI * 2);
-    g.fill();
-  }
-  return tex(c);
-}
-
-function roughnessTexture() {
-  // puddles -> low roughness patches (green channel is used by three)
-  const r = mulberry32(11);
-  const [c, g] = canvas(256, 256);
-  g.fillStyle = '#9a9a9a';
-  g.fillRect(0, 0, 256, 256);
-  for (let k = 0; k < 14; k++) {
-    const x = r() * 256, y = r() * 256, rad = r.range(14, 50);
-    const gr = g.createRadialGradient(x, y, 0, x, y, rad);
-    gr.addColorStop(0, '#101010');
-    gr.addColorStop(1, 'rgba(16,16,16,0)');
-    g.fillStyle = gr;
-    g.fillRect(0, 0, 256, 256);
-  }
-  return tex(c, { srgb: false });
 }
 
 function plazaTexture() {
@@ -325,11 +219,22 @@ function neonBasic(hex, k = 3) {
   return m;
 }
 
-function windowMat(t, intensity = 0.95) {
-  return new THREE.MeshStandardMaterial({
-    map: t, emissiveMap: t, emissive: 0xffffff, emissiveIntensity: intensity,
-    roughness: 0.55, metalness: 0.4, envMapIntensity: 0.6,
+// Facade material: wall colour + lit-window glow + relief + per-texel gloss (glass is a mirror, walls are matte).
+function facadeMat(set, intensity = 1) {
+  const m = new THREE.MeshStandardMaterial({
+    map: set.map, emissiveMap: set.emissiveMap, emissive: 0xffffff, emissiveIntensity: intensity,
+    roughnessMap: set.roughnessMap, metalnessMap: set.roughnessMap, roughness: 1, metalness: 1, envMapIntensity: 1.1,
   });
+  if (set.normalMap) { m.normalMap = set.normalMap; m.normalScale.set(1, 1); }
+  return m;
+}
+// Standard material from a ground-surface texture set.
+function surfaceMat(set, opts) {
+  const m = new THREE.MeshStandardMaterial({ map: set.map, ...opts });
+  if (set.roughnessMap) { m.roughnessMap = set.roughnessMap; m.metalnessMap = set.roughnessMap; m.roughness = 1; m.metalness = 1; }
+  if (set.normalMap) m.normalMap = set.normalMap;
+  if (set.emissiveMap) m.emissiveMap = set.emissiveMap;
+  return m;
 }
 
 // A tiny scene of neon panels rendered to a PMREM env map: gives wet, glossy reflections.
@@ -352,8 +257,9 @@ function buildEnvironment(renderer) {
   return rt.texture;
 }
 
-export function initMaterials(renderer) {
+export function initMaterials(renderer, q = { hi: false, normals: true }) {
   maxAniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  setAnisotropy(maxAniso);
   const envMap = buildEnvironment(renderer);
 
   const warm = ['#ffcf86', '#ffb35a', '#fff1c9', '#ff9d4d', '#ffe0a8'];
@@ -361,28 +267,29 @@ export function initMaterials(renderer) {
   const pink = ['#ff7ae0', '#ff4fc3', '#ffc2f0', '#c08bff', '#9ef3ff'];
   const mixed = [...warm.slice(0, 3), ...cool.slice(0, 2), '#ff7ae0'];
 
-  MAT.winA = windowMat(windowTexture(101, warm, 0.26));
-  MAT.winB = windowMat(windowTexture(202, cool, 0.22));
-  MAT.winC = windowMat(windowTexture(303, pink, 0.2));
-  MAT.winD = windowMat(windowTexture(404, mixed, 0.1));
-  MAT.winCorp = windowMat(windowTexture(505, ['#7fdcff', '#d4f6ff', '#5ab0ff', '#a6b8ff'], 0.3, 'ribbon'), 0.9);
-  MAT.winCorp2 = windowMat(windowTexture(606, ['#ffd38a', '#fff3d6', '#ff9a8a'], 0.28, 'ribbon'), 0.9);
-  MAT.winMega = windowMat(windowTexture(707, mixed, 0.24, 'dense'));
-  MAT.winServer = windowMat(windowTexture(909, ['#39ff9c', '#2ef6ff', '#39ff9c', '#ffb02e', '#ff2848'], 0.45, 'server'), 1.4);
-  MAT.winSky = windowMat(windowTexture(808, mixed, 0.08), 0.8); // distant skyline
+  const F = (seed, pal, lit, style, wall, k) => facadeMat(facadeSet(seed, pal, lit, style, wall, q), k);
+  MAT.winA = F(101, warm, 0.26, 'grid', 'concrete');
+  MAT.winB = F(202, cool, 0.22, 'grid', 'panel');
+  MAT.winC = F(303, pink, 0.2, 'grid', 'brick');
+  MAT.winD = F(404, mixed, 0.1, 'grid', 'stucco');
+  MAT.winE = F(111, warm, 0.3, 'grid', 'brick');
+  MAT.winF = F(222, mixed, 0.18, 'dense', 'stucco');
+  MAT.winCorp = F(505, ['#7fdcff', '#d4f6ff', '#5ab0ff', '#a6b8ff'], 0.3, 'ribbon', 'dark', 0.95);
+  MAT.winCorp2 = F(606, ['#ffd38a', '#fff3d6', '#ff9a8a'], 0.28, 'ribbon', 'panel', 0.95);
+  MAT.winMega = F(707, mixed, 0.24, 'dense', 'concrete');
+  MAT.winServer = F(909, ['#39ff9c', '#2ef6ff', '#39ff9c', '#ffb02e', '#ff2848'], 0.45, 'server', 'dark', 1.4);
+  MAT.winSky = facadeMat(facadeSet(808, mixed, 0.08, 'grid', 'concrete', { hi: false, normals: false }), 0.8); // distant skyline
   MAT.winSky.fog = true;
 
-  MAT.metal = new THREE.MeshStandardMaterial({ color: 0x16161f, roughness: 0.45, metalness: 0.85 });
-  MAT.concrete = new THREE.MeshStandardMaterial({ color: 0x1a1a22, roughness: 0.6, metalness: 0.2 });
-  MAT.roof = new THREE.MeshStandardMaterial({ color: 0x0c0c12, roughness: 0.7, metalness: 0.4 });
+  // world-mapped surfaces: textured from world position, so they tile seamlessly everywhere
+  MAT.metal = worldMapped(surfaceMat(metalSet(q.normals), { color: 0x9a9aa8, envMapIntensity: 1 }), 4);
+  MAT.concrete = worldMapped(surfaceMat(pavingSet(q.normals), { color: 0xa8a8b4, envMapIntensity: 0.7 }), 6, 0.35);
+  MAT.roof = worldMapped(surfaceMat(roofSet(q.normals), { color: 0xb0b0bc, envMapIntensity: 0.8 }), 8, 0.3);
   MAT.glass = new THREE.MeshStandardMaterial({ color: 0x0a1424, roughness: 0.08, metalness: 0.95, envMapIntensity: 1.4 });
 
-  const asphalt = asphaltTexture();
-  MAT.asphalt = new THREE.MeshStandardMaterial({
-    map: asphalt, roughnessMap: roughnessTexture(), color: 0xffffff,
-    roughness: 0.55, metalness: 0.45, envMapIntensity: 0.9,
-  });
-  MAT.ground = new THREE.MeshStandardMaterial({ color: 0x0b0a12, roughness: 0.55, metalness: 0.45, envMapIntensity: 0.8 });
+  MAT.asphalt = worldMapped(surfaceMat(asphaltSet(q), { color: 0xffffff, envMapIntensity: 1.5 }), 24, 0.45);
+  if (MAT.asphalt.normalMap) MAT.asphalt.normalScale.set(0.6, 0.6);
+  MAT.ground = worldMapped(surfaceMat(groundSet(q.normals), { color: 0xffffff, roughness: 0.55, metalness: 0.4, envMapIntensity: 0.9 }), 30, 0.6);
   const pt = plazaTexture();
   MAT.plaza = new THREE.MeshStandardMaterial({ map: pt, emissiveMap: pt, emissive: 0xffffff, emissiveIntensity: 0.8, roughness: 0.3, metalness: 0.5 });
 
@@ -390,8 +297,11 @@ export function initMaterials(renderer) {
     MAT['neon_' + k] = neonBasic(NEON[k], 2.4);
     MAT['dim_' + k] = neonBasic(NEON[k], 1.1);
   }
-  MAT.lane = neonBasic(0xffa424, 1.0);
-  MAT.paint = neonBasic(0x9aa4c0, 0.6);
+  const wear = paintWear();
+  MAT.lane = worldMapped(neonBasic(0xffa424, 1.5), 3);
+  MAT.lane.map = wear;
+  MAT.paint = worldMapped(neonBasic(0x9aa4c0, 1.0), 3);
+  MAT.paint.map = wear;
   MAT.lamp = neonBasic(0xffe2b8, 4);
   MAT.leafC = new THREE.MeshStandardMaterial({ color: 0x041a14, emissive: 0x1de9b6, emissiveIntensity: 0.55, roughness: 0.6, flatShading: true });
   MAT.leafM = new THREE.MeshStandardMaterial({ color: 0x1a0414, emissive: 0xff2bd6, emissiveIntensity: 0.5, roughness: 0.6, flatShading: true });
@@ -448,7 +358,7 @@ export function initMaterials(renderer) {
   MAT.graffiti = new THREE.MeshStandardMaterial({ map: tex(ga, { repeat: false }), emissiveMap: tex(ga, { repeat: false }), emissive: 0xffffff, emissiveIntensity: 0.55, roughness: 0.8 });
   const fw = tex(ferryWindowTexture());
   MAT.ferryWin = new THREE.MeshStandardMaterial({ map: fw, emissiveMap: fw, emissive: 0xffffff, emissiveIntensity: 1.3, roughness: 0.3 });
-  MAT.grass = new THREE.MeshStandardMaterial({ color: 0x0b1f1a, roughness: 0.85, metalness: 0.05, emissive: 0x052a20, emissiveIntensity: 0.35 });
+  MAT.grass = worldMapped(surfaceMat(grassSet(), { color: 0xc0d0c8, roughness: 0.9, metalness: 0.02, emissive: 0xffffff, emissiveIntensity: 0.9 }), 6, 0.5);
   MAT.pond = new THREE.MeshStandardMaterial({ color: 0x02060c, roughness: 0.02, metalness: 1, envMapIntensity: 2.2 });
   MAT.fire = neonBasic(0xff7a1a, 3);
   MAT.firePool = MAT.pool.clone();

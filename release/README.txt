@@ -1,4 +1,4 @@
-NEON SPRAWL  v1.2.0
+NEON SPRAWL  v1.3.0
 ===================
 A dark-neon cyberpunk city builder. Build an endless megacity from above, then walk or
 drive its rain-soaked streets.
@@ -11,6 +11,11 @@ HOW TO PLAY
 
 Best in an up-to-date Chrome, Edge or Firefox. Safari works too.
 Use a mouse if you can: the trackpad works, but building is easier with a mouse.
+
+FINDING YOUR WAY
+----------------
+The city is split into named districts, each with its own colours. Tall light beacons
+mark district centres. The panel beside the minimap names your district and points home.
 
 WANTED LEVEL
 ------------

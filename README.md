@@ -4,20 +4,20 @@ A dark-neon cyberpunk city builder that runs in the browser. Raise towers, fusio
 above, then drop to street level and **walk** or **drive** through an endless rain-soaked megacity. The sprawl
 keeps generating dense city in every direction as you move.
 
-## Download and play (v1.2.0)
+## Download and play (v1.3.0)
 
-1. Download [`releases/NeonSprawl-v1.2.0.zip`](releases/NeonSprawl-v1.2.0.zip) (about 240 KB).
+1. Download [`releases/NeonSprawl-v1.3.0.zip`](releases/NeonSprawl-v1.3.0.zip) (about 240 KB).
 2. Unzip it anywhere and double-click **`Play Neon Sprawl.html`**.
 
 That's it: it runs in your browser straight from the folder, with no install, launcher or internet
 connection. Best in an up-to-date Chrome, Edge or Firefox. `README.txt` in the zip covers controls and
 troubleshooting. If it stutters on a laptop, set **Settings → Graphics quality** to Low or Medium.
 
-## Windows desktop app (v1.2.0)
+## Windows desktop app (v1.3.0)
 
 A standalone Windows build wraps the same game in Electron: its own window, no browser needed.
 
-1. Extract `NeonSprawl-v1.2.0-win64.zip` (right-click → Extract All).
+1. Extract `NeonSprawl-v1.3.0-win64.zip` (right-click → Extract All).
 2. Run **`Neon Sprawl.exe`**. The build isn't code-signed, so on first launch SmartScreen may say
    "Windows protected your PC": click **More info → Run anyway**.
 
@@ -97,6 +97,13 @@ flatline.
 
 ## The city
 
+The sprawl is divided into **named districts** of seven kinds: entertainment (magenta signs and billboards),
+financial (tall cyan glass towers), industrial (amber-lit reactors and uplinks), old town (low brick
+tenements), garden (green, full of parks), data quarter (violet server spires) and undercity (dim, red,
+gang-ridden). Each district has a coloured **light beacon** with its name over its centre, visible from far
+away. The HUD names the district you're in and shows an arrow and distance back **home**.
+
+
 Dense downtowns alternate with **open districts** of parkland and empty lots, which are good places to build.
 **Elevated highways** on two levels (14 m and 24 m) cross over each other on pylons. Where a highway dips to
 street level is an on-ramp: drive or walk up it.
@@ -161,6 +168,8 @@ src/humanoids.js            instanced articulated biped rig (robots, gang member
 src/npcs.js                 street robots and alley gangs
 src/dialogue.js, conversation.js   procedural robot/gang dialogue and the talk flows
 src/markers.js              map marker / courier drop point
+src/textures.js             generated surface textures (facades, asphalt, paving...) and world-space mapping
+src/districts.js, landmarks.js   named districts with themes; beacons marking their centres
 tools/build.mjs             release build (esbuild bundle, offline fonts, zip)
 tools/build-win.mjs         Windows desktop build (Electron runtime + branded exe via resedit)
 desktop/                    Electron shell (main.js), app icon

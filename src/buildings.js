@@ -5,6 +5,10 @@ import { Parts } from './geom.js';
 import { MAT, NEON_KEYS, SIGN_COUNT, AD_COUNT } from './materials.js';
 import { mulberry32 } from './rng.js';
 import { TILE } from './config.js';
+import { DEFAULT_THEME } from './districts.js';
+
+// The district theme for the building being generated (colours and facade sets).
+let TH = DEFAULT_THEME;
 
 const PI = Math.PI;
 const torusGeo = new THREE.TorusGeometry(2.6, 0.09, 6, 48);
@@ -89,7 +93,7 @@ function bladeSign(P, r, cx, cz, w, d, y0, h) {
   if (face === 1) { z = cz + d / 2 + out; x = cx + t; ry = PI / 2; }
   if (face === 3) { z = cz - d / 2 - out; x = cx + t; ry = PI / 2; }
   P.plane('sign' + r.int(0, SIGN_COUNT - 1), sw, sh, x, yc, z, ry);
-  const nk = 'neon_' + r.pick(NEON_KEYS);
+  const nk = 'neon_' + r.pick(TH.neon);
   P.box(nk, sw + 0.1, 0.1, 0.1, x, yc + sh / 2 + 0.05, z, ry, false);
   P.box(nk, sw + 0.1, 0.1, 0.1, x, yc - sh / 2 - 0.05, z, ry, false);
 }
@@ -170,8 +174,8 @@ export function genHabitat(level, seed, cx, cz) {
   const anim = [];
   sidewalk(P, cx, cz);
   const H = 16 + level * 15 + r.range(0, 14);
-  const win = r.pick(['winA', 'winA', 'winB', 'winC', 'winD']);
-  const neon = 'neon_' + r.pick(NEON_KEYS);
+  const win = r.pick(TH.hab);
+  const neon = 'neon_' + r.pick(TH.neon);
   const style = r();
   let top = H;
 
@@ -251,9 +255,9 @@ export function genCorp(level, seed, cx, cz) {
   const anim = [];
   sidewalk(P, cx, cz);
   const H = 38 + level * 26 + r.range(0, 24);
-  const win = r.pick(['winCorp', 'winCorp', 'winCorp2', 'winB']);
-  const neon = 'neon_' + r.pick(NEON_KEYS);
-  const neon2 = 'neon_' + r.pick(NEON_KEYS);
+  const win = r.pick(TH.corp);
+  const neon = 'neon_' + r.pick(TH.neon);
+  const neon2 = 'neon_' + r.pick(TH.neon);
   const style = r();
   let top;
 
@@ -320,8 +324,8 @@ export function genArcology(level, seed, cx, cz) {
   const P = new Parts();
   const anim = [];
   sidewalk(P, cx, cz, 2);
-  const neon = 'neon_' + r.pick(NEON_KEYS);
-  const neon2 = 'neon_' + r.pick(NEON_KEYS);
+  const neon = 'neon_' + r.pick(TH.neon);
+  const neon2 = 'neon_' + r.pick(TH.neon);
   const ph = 12 + r.range(0, 8) + level * 1.5;
   const W = 22.4;
   P.boxB('winMega', W, ph, W, cx, 0.2, cz);
@@ -346,7 +350,7 @@ export function genArcology(level, seed, cx, cz) {
     const w = r.range(7.6, 9.2);
     const x = cx + q[0] * 5.4, z = cz + q[1] * 5.4;
     const h = (70 + level * 30) * (k === 0 ? 1 : r.range(0.5, 0.9));
-    const win = r.pick(['winCorp', 'winMega', 'winB', 'winA']);
+    const win = r.pick([...TH.corp, 'winMega']);
     const h1 = h * r.range(0.6, 0.75);
     let y = ph + 0.2;
     P.boxB(win, w, h1, w, x, y, z);
@@ -418,11 +422,11 @@ export function genBillboard(level, seed, cx, cz) {
   sidewalk(P, cx, cz);
   const H = 16 + level * 5 + r.range(0, 6);
   P.cyl('metal', 0.3, 0.55, H, cx, 0.2, cz, 10, false);
-  P.cyl('neon_' + r.pick(NEON_KEYS), 0.62, 0.62, 0.2, cx, 3, cz, 12, false);
+  P.cyl('neon_' + r.pick(TH.neon), 0.62, 0.62, 0.2, cx, 3, cz, 12, false);
   const bw = 14, bh = 7, by = H + bh / 2 + 0.2;
   const alongX = r.chance(0.5);
   const key = 'ad' + r.int(0, AD_COUNT - 1);
-  const nk = 'neon_' + r.pick(NEON_KEYS);
+  const nk = 'neon_' + r.pick(TH.neon);
   if (alongX) {
     P.box('metal', bw + 0.3, bh + 0.3, 0.3, cx, by, cz, 0, false);
     P.plane(key, bw, bh, cx, by, cz + 0.17, 0);
@@ -575,7 +579,7 @@ export function genDronehub(level, seed, cx, cz) {
   const anim = [];
   sidewalk(P, cx, cz);
   const H = 10 + level * 6 + r.range(0, 5);
-  const win = r.pick(['winB', 'winD', 'winCorp']);
+  const win = r.pick(TH.hab);
   P.boxB(win, 9.4, H, 9.4, cx, 0.2, cz);
   ring(P, 'neon_cyan', 9.4, 9.4, H + 0.2, cx, cz);
   bladeSign(P, r, cx, cz, 9.4, 9.4, 0.2, H);
@@ -772,7 +776,8 @@ export function genPark(level, seed, cx, cz) {
   const anim = [];
   P.box('grass', TILE, 0.12, TILE, cx, 0.06, cz, 0, false);
   // paths run to the tile edges so neighbouring park tiles join up
-  const pathKey = r.chance(0.5) ? 'dim_cyan' : 'dim_green';
+  r.chance(0.5); // keep the random sequence stable
+  const pathKey = 'dim_' + TH.neon[0];
   if (r.chance(0.7)) P.box(pathKey, TILE, 0.03, 1.2, cx, 0.13, cz, 0, false);
   if (r.chance(0.7)) P.box(pathKey, 1.2, 0.03, TILE, cx, 0.13, cz, 0, false);
   const feature = r();
@@ -816,7 +821,7 @@ export function genPark(level, seed, cx, cz) {
   return { parts: P.merge(), anim, height: 6, rects: [] };
 }
 
-export const GENERATORS = {
+const RAW = {
   park: genPark,
   alley: genAlley,
   powercore: genPowercore,
@@ -830,3 +835,12 @@ export const GENERATORS = {
   plaza: genPlaza,
   billboard: genBillboard,
 };
+
+// Public generators: (level, seed, x, z, theme) with the district theme applied.
+export const GENERATORS = {};
+for (const [type, gen] of Object.entries(RAW)) {
+  GENERATORS[type] = (level, seed, cx, cz, theme) => {
+    TH = theme || DEFAULT_THEME;
+    try { return gen(level, seed, cx, cz); } finally { TH = DEFAULT_THEME; }
+  };
+}

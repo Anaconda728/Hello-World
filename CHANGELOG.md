@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.3.0
+
+- **Building textures**: facades are now detailed surfaces instead of flat window grids: concrete, brick,
+  stucco and metal-panel walls with framed windows, sills, mullions, blinds, curtains, people and screens
+  inside lit rooms, air-conditioning units, drainpipes, rust streaks and weathering. Windows are recessed and
+  glossy, walls matte, so reflections pick out the glass.
+- **Road and ground textures**: asphalt with aggregate, cracks, tar seams, patches, oil stains and mirror
+  puddles; paved sidewalks; bitumen roofs; plated metal; cracked bare ground; textured park lawns with glowing
+  moss; chipped, tyre-worn lane paint. Surfaces are mapped from world position, so they tile seamlessly over
+  every slab, ramp and pylon.
+- Texture detail follows the graphics setting (Low: no surface relief; High: double-resolution facades and
+  asphalt). Changing it applies on the next launch.
+- **Districts**: the city is divided into named neighbourhoods of seven kinds (entertainment, financial,
+  industrial, old town, garden, data quarter, undercity). Each has its own neon colours, wall materials,
+  building mix, skyline height, kerb lights and lanterns.
+- **Wayfinding**: a coloured light beacon with the district's name floats over each district centre and is
+  visible through the fog; the HUD shows the district you are in, announces when you enter a new one, and
+  points the way home with distance; minimap streets take their district's colour.
+
 ## 1.2.0
 
 - **People**: pedestrians, robots and gang members share a new smooth-limbed, jointed body (capsule limbs,

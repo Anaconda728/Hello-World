@@ -11,6 +11,7 @@ import { Parts, meshesFromPartMaps } from './geom.js';
 import { MAT } from './materials.js';
 import { mulberry32, randSeed, hash3, hashInt, vnoise } from './rng.js';
 import { Highways } from './highways.js';
+import { districtAt } from './districts.js';
 
 const mod = (a, n) => ((a % n) + n) % n;
 export const CORPS = ['Arasaki-Kemp', 'Omnidyne', 'Helix Biotic', 'Vantablack Sys', 'Kuroshio Heavy', 'Neural+', 'Sunward Orbital', 'Mirrorgate', 'Tessellate', 'Black Lotus', 'Cobalt Meridian', 'Zentek'];
@@ -87,8 +88,10 @@ export class City {
   downtown(i, j) { return vnoise(this.seed, i / 38, j / 38) * 0.75 + vnoise(this.seed + 7, i / 11, j / 11) * 0.25; }
   tech(i, j) { return vnoise(this.seed + 99, i / 24, j / 24); }
   // Open districts (parks, empty lots, low-rise) vs dense ones; downtown is never open.
+  district(i, j) { return districtAt(this.seed, i, j); }
+  theme(i, j) { return districtAt(this.seed, i, j).theme; }
   openness(i, j) {
-    const o = vnoise(this.seed + 300, i / 34, j / 34);
+    const o = vnoise(this.seed + 300, i / 34, j / 34) + this.theme(i, j).open;
     return this.downtown(i, j) > 0.62 ? 0 : o;
   }
 
@@ -113,17 +116,18 @@ export class City {
   }
 
   // ------------------------------------------------------------ generation
-  pickType(r, d, t) {
-    const table = d > 0.6
+  pickType(r, d, t, th) {
+    const base = d + th.level * 0.07 > 0.6
       ? [['corp', 0.42], ['habitat', 0.27], ['dataspire', 0.07], ['billboard', 0.06], ['clinic', 0.05], ['dronehub', 0.05], ['plaza', 0.03], ['powercore', 0.02], ['uplink', 0.008]]
       : [['habitat', 0.68], ['corp', 0.09], ['clinic', 0.05], ['billboard', 0.05], ['plaza', 0.04], ['dronehub', 0.04], ['dataspire', 0.03], ['powercore', 0.02], ['uplink', 0.004]];
-    if (t > 0.68 && r.chance((t - 0.68) * 1.6)) return r.pick(['dataspire', 'dataspire', 'dronehub', 'powercore', 'uplink']);
+    const table = base.map(([type, w]) => [type, w * (th.mix[type] ?? 1)]); // district character
+    if (t > 0.68 && r.chance((t - 0.68) * 1.2)) return r.pick(['dataspire', 'dataspire', 'dronehub', 'powercore', 'uplink']);
     let x = r() * table.reduce((s, e) => s + e[1], 0);
     for (const [type, w] of table) { x -= w; if (x <= 0) return type; }
     return 'habitat';
   }
-  levelFor(r, d) {
-    const base = 1 + Math.max(0, d - 0.3) * 9;
+  levelFor(r, d, th) {
+    const base = 1 + Math.max(0, d - 0.3) * 9 + (th ? th.level : 0);
     return Math.max(1, Math.min(MAX_LEVEL, Math.round(base * r.range(0.6, 1.2) + r.range(-0.6, 0.8))));
   }
   tileFreeIn(c, i, j) {
@@ -140,11 +144,11 @@ export class City {
       const i = c.i0 + r.int(0, CHUNK - 2), j = c.j0 + r.int(0, CHUNK - 2);
       if (this.downtown(i, j) > 0.55 && r.chance(0.6) &&
         this.tileFreeIn(c, i, j) && this.tileFreeIn(c, i + 1, j) && this.tileFreeIn(c, i, j + 1) && this.tileFreeIn(c, i + 1, j + 1)) {
-        this.addBuilding('arcology', i, j, { level: this.levelFor(r, this.downtown(i, j)), seed: hashInt(i, j, this.seed + 5), owned: false });
+        this.addBuilding('arcology', i, j, { level: this.levelFor(r, this.downtown(i, j), this.theme(i, j)), seed: hashInt(i, j, this.seed + 5), owned: false });
       }
     }
     // dark alleys: one open side onto a street, gangs gather inside
-    const nAlleys = r() < 0.75 ? r.int(1, 3) : 0;
+    const nAlleys = Math.max(0, (r() < 0.75 ? r.int(1, 3) : 0) + this.theme(c.i0 + 8, c.j0 + 8).alleys);
     for (let t = 0, made = 0; t < 30 && made < nAlleys; t++) {
       const i = c.i0 + r.int(1, CHUNK - 2), j = c.j0 + r.int(1, CHUNK - 2);
       if (!this.tileFreeIn(c, i, j) || this.downtown(i, j) > 0.72) continue;
@@ -167,8 +171,9 @@ export class City {
         continue; // the rest stays as open lots
       }
       const d = this.downtown(i, j);
-      const type = this.pickType(r, d, this.tech(i, j));
-      this.addBuilding(type, i, j, { level: type === 'plaza' ? 1 : this.levelFor(r, d), seed: hashInt(i, j, this.seed + 11), owned: false });
+      const th = this.theme(i, j);
+      const type = this.pickType(r, d, this.tech(i, j), th);
+      this.addBuilding(type, i, j, { level: type === 'plaza' ? 1 : this.levelFor(r, d, th), seed: hashInt(i, j, this.seed + 11), owned: false });
     }
   }
 
@@ -205,7 +210,7 @@ export class City {
   generate(b, partsOnly = false) {
     if (b.parts) for (const g of b.parts.values()) g.dispose();
     const c = this.center(b);
-    const res = GENERATORS[b.type](b.level, b.seed, c.x, c.z);
+    const res = GENERATORS[b.type](b.level, b.seed, c.x, c.z, this.theme(b.i, b.j));
     b.parts = res.parts;
     b.height = res.height;
     b.rects = res.rects || (res.rect ? [res.rect] : []);
@@ -416,6 +421,7 @@ export class City {
       const uv = plane.attributes.uv;
       for (let k = 0; k < uv.count; k++) uv.setXY(k, uv.getX(k) * 0.5 + mod(i, 2) * 0.5, uv.getY(k) * 0.5 + mod(j, 2) * 0.5);
       P.geo('asphalt', plane, x, 0.02, z);
+      const th = this.theme(i, j);
       const n = DIRS.map(([dx, dz]) => this.isRoad(i + dx, j + dz));
       const count = n.filter(Boolean).length;
       const straight = count === 2 && ((n[0] && n[2]) || (n[1] && n[3]));
@@ -427,7 +433,7 @@ export class City {
           const sx = x + dx * (TILE / 2 - 0.8), sz = z + dz * (TILE / 2 - 0.8);
           P.box('concrete', alongX ? TILE : 1.6, 0.22, alongX ? 1.6 : TILE, sx, 0.11, sz, 0, false);
           const kx = x + dx * (TILE / 2 - 1.62), kz = z + dz * (TILE / 2 - 1.62);
-          P.box('dim_cyan', alongX ? TILE : 0.08, 0.05, alongX ? 0.08 : TILE, kx, 0.2, kz, 0, false);
+          P.box('dim_' + th.neon[0], alongX ? TILE : 0.1, 0.06, alongX ? 0.1 : TILE, kx, 0.2, kz, 0, false);
           if (lampSide < 0) lampSide = d;
           // sidewalk vending machine / data kiosk
           if (hash3(i * 4 + d, j, s + 21) < 0.09) {
@@ -437,7 +443,7 @@ export class City {
             // screen faces the road (towards the tile centre)
             const ry = alongX ? (dz > 0 ? PI : 0) : (dx > 0 ? -PI / 2 : PI / 2);
             P.plane('ad' + Math.floor(hash3(i, j, s + 23) * 8), 0.9, 1.2, vx - dx * 0.37, 1.45, vz - dz * 0.37, ry);
-            P.box('neon_' + ['cyan', 'magenta', 'amber', 'green'][Math.floor(hash3(j, i, s + 24) * 4)], alongX ? 1.12 : 0.72, 0.08, alongX ? 0.72 : 1.12, vx, 2.25, vz, 0, false);
+            P.box('neon_' + th.neon[Math.floor(hash3(j, i, s + 24) * th.neon.length)], alongX ? 1.12 : 0.72, 0.08, alongX ? 0.72 : 1.12, vx, 2.25, vz, 0, false);
           }
         } else if (count >= 3) {
           for (let k = -2; k <= 2; k++) {
@@ -478,7 +484,7 @@ export class City {
               if (alongZ) { g.rotateY(0); P.geo('cable', g, x + um, ym, z + along); }
               else { g.rotateY(PI / 2); P.geo('cable', g, x + along, ym, z + um); }
               if (q % 2 === 1 && hash3(i * 9 + q, j + k, s + 36) < 0.6) {
-                const key = 'neon_' + ['magenta', 'amber', 'cyan', 'pink', 'red'][Math.floor(hash3(i, j * 9 + q, s + 37) * 5)];
+                const key = 'neon_' + th.neon[Math.floor(hash3(i, j * 9 + q, s + 37) * th.neon.length)];
                 const lx = alongZ ? x + (u1 * span) : x + along, lz = alongZ ? z + along : z + (u1 * span);
                 P.box(key, 0.35, 0.5, 0.35, lx, y1 - 0.35, lz, 0, false);
               }

@@ -233,6 +233,32 @@ export class UI {
   }
   pickChoice(k) { this.dialogChoices[k]?.fn(); }
 
+  // ---------------------------------------------------------------- districts
+  setDistrict(d, entered, home) {
+    const el = $('district');
+    if (this.dKey !== d.id + d.name) {
+      this.dKey = d.id + d.name;
+      el.style.setProperty('--dc', d.theme.color);
+      el.querySelector('b').textContent = d.name;
+      el.querySelector('span').textContent = d.theme.label;
+      if (entered) {
+        const en = $('entering');
+        en.style.setProperty('--dc', d.theme.color);
+        en.querySelector('b').textContent = d.name;
+        en.querySelector('span').textContent = d.theme.label;
+        en.classList.remove('show');
+        void en.offsetWidth;
+        en.classList.add('show');
+      }
+    }
+    const h = $('homehud');
+    h.classList.toggle('show', !!home);
+    if (home) {
+      h.querySelector('u').textContent = `HOME ${home.dist < 1000 ? Math.round(home.dist) + ' m' : (home.dist / 1000).toFixed(1) + ' km'}`;
+      h.querySelector('.arrow').style.transform = `rotate(${home.rel}rad)`;
+    }
+  }
+
   // ---------------------------------------------------------------- combat hud
   setVitals(hp, maxHp, sh, maxSh) {
     $('v-hp').style.width = (100 * hp / maxHp).toFixed(1) + '%';
@@ -343,7 +369,10 @@ export class UI {
       const i = ci + a, j = cj + b;
       let r = 7, g = 4, bl = 15;
       const loaded = city.chunkAt(i, j);
-      if (city.isRoad(i, j)) { if (city.highways.onTile(i, j)) { r = 150; g = 70; bl = 190; } else { r = 60; g = 63; bl = 92; } }
+      if (city.isRoad(i, j)) {
+        if (city.highways.onTile(i, j)) { r = 235; g = 235; bl = 245; }
+        else { const c = city.theme(i, j).rgb; r = 40 + c[0] * 0.38; g = 42 + c[1] * 0.38; bl = 60 + c[2] * 0.38; } // streets in the district's colour
+      }
       else if (loaded) {
         const x = city.buildingAt(i, j);
         if (x) {

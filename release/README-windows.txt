@@ -1,4 +1,4 @@
-NEON SPRAWL  v1.2.0  (Windows desktop edition)
+NEON SPRAWL  v1.3.0  (Windows desktop edition)
 ==============================================
 A dark-neon cyberpunk city builder. Build an endless megacity from above, then walk or
 drive its rain-soaked streets.
@@ -30,6 +30,11 @@ Drive:  W/S throttle/brake    A/D steer    Space drift    Shift boost    C camer
         X optic overlay    F get out
 Always: B builder    Esc menu (save, settings, quit)    H hide HUD    P quick save
 Window: F11 or Alt+Enter toggles fullscreen
+
+FINDING YOUR WAY
+----------------
+The city is split into named districts, each with its own colours. Tall light beacons
+mark district centres. The panel beside the minimap names your district and points home.
 
 WANTED LEVEL
 ------------
